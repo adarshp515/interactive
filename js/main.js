@@ -2122,7 +2122,7 @@ const apiUrl = `${API_BASE_URL}/uploadHtmlToPdf?file`;
           return;
         }
 
-        setTimeout(check, 250);
+        setTimeout(check, 2000);
       }
 
       check();
