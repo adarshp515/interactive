@@ -1,4 +1,4 @@
-﻿
+
 window.editor = InteractiveDesigner.init({
   height: "100%",
   container: "#editor",
@@ -2014,9 +2014,29 @@ const apiUrl = `${API_BASE_URL}/uploadHtmlToPdf?file`;
       ? subreportStyles.join('\n')
       : '';
 
+    // PDF overflow guard — prevents plugin iframes/images/charts that are
+    // wider than the A4 page from pushing the renderer into extra blank pages.
+    const pdfOverflowGuardCSS = `<style>
+  .page-container { overflow: hidden !important; }
+  .page-content, .content-wrapper, .main-content-area { overflow: hidden !important; }
+  .page-container iframe,
+  .page-container img,
+  .page-container canvas,
+  .page-container video,
+  .page-container embed,
+  .page-container object,
+  .page-container svg,
+  .page-container .highcharts-container,
+  .page-container [data-i_designer-type] {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+</style>`;
+
     const combinedStyles = `
   <style>${mainCSS}</style>
   ${subStyles}
+  ${pdfOverflowGuardCSS}
 `;
 
     const parser = new DOMParser();
@@ -3108,6 +3128,18 @@ function extractSavedPageImportPayload(rawHtml) {
     settingsScript.remove();
   }
 
+  // Extract embedded page setup settings (A4/letter size etc.) saved by downloadPage
+  const pageSetupScript = parsedDoc.getElementById("page-setup-settings");
+  let importedPageSetupSettings = null;
+  if (pageSetupScript) {
+    try {
+      importedPageSetupSettings = JSON.parse(pageSetupScript.textContent || "{}");
+    } catch (err) {
+      console.error("Failed to parse page setup settings from imported page:", err);
+    }
+    pageSetupScript.remove();
+  }
+
   const cssText = Array.from(parsedDoc.querySelectorAll("head style"))
     .map((styleTag) => styleTag.textContent || "")
     .join("\n");
@@ -3119,7 +3151,8 @@ function extractSavedPageImportPayload(rawHtml) {
   return {
     bodyHtml,
     cssText,
-    slideshowSettings
+    slideshowSettings,
+    importedPageSetupSettings
   };
 }
 
@@ -3137,21 +3170,42 @@ function scheduleInteractiveSlideshowRestore(reason = "interactive-slideshow-res
 
 function applyImportedSinglePage(rawHtml, reason = "import-single-page", options = {}) {
   const { closeModal = true } = options;
-  const { bodyHtml, cssText, slideshowSettings } = extractSavedPageImportPayload(rawHtml);
+  const { bodyHtml, cssText, slideshowSettings, importedPageSetupSettings } = extractSavedPageImportPayload(rawHtml);
 
   sessionStorage.setItem('single-page', JSON.stringify(rawHtml));
   window.slideshowSettings = slideshowSettings || null;
   window.__iDesignerImportingPage = true;
 
+  // Set components first so GrapesJS initialises component models;
+  // then apply CSS so ID-scoped width/height rules are not overridden
+  // by the page-manager plugin's default component styles.
+  editor.setComponents(bodyHtml || rawHtml);
+
   if (cssText && typeof editor.setStyle === "function") {
     editor.setStyle(cssText);
   }
 
-  editor.setComponents(bodyHtml || rawHtml);
   scheduleDatasourceRebind(reason, 250);
 
   if (slideshowSettings || /data-slide\s*=/.test(bodyHtml || rawHtml || "")) {
     scheduleInteractiveSlideshowRestore(reason, 500);
+  }
+
+  // Restore embedded page setup (A4 size, margins, etc.) after components settle
+  if (importedPageSetupSettings && importedPageSetupSettings.isInitialized) {
+    window.setTimeout(() => {
+      try {
+        const mgr = window.pageSetupManager || editor.PageSetupManager;
+        if (mgr && typeof mgr.importPageSettings === 'function') {
+          mgr.importPageSettings(importedPageSetupSettings);
+          if (typeof mgr.updatePageRule === 'function') mgr.updatePageRule();
+          if (typeof mgr.updateNavbarButton === 'function') mgr.updateNavbarButton();
+          if (typeof mgr.updateAddPageButton === 'function') mgr.updateAddPageButton();
+        }
+      } catch (e) {
+        console.error('[Import] Failed to restore page setup settings:', e);
+      }
+    }, 700);
   }
 
   window.setTimeout(() => {
@@ -3165,7 +3219,9 @@ function applyImportedSinglePage(rawHtml, reason = "import-single-page", options
   const tempDiv = document.createElement('div');
   tempDiv.innerHTML = bodyHtml || rawHtml;
   tempDiv.querySelectorAll('script').forEach(scr => {
-    if (scr.id === 'interactive-designer-slideshow-settings' || scr.type === 'application/json') {
+    if (scr.id === 'interactive-designer-slideshow-settings' ||
+        scr.id === 'page-setup-settings' ||
+        scr.type === 'application/json') {
       return;
     }
 
@@ -3205,6 +3261,11 @@ function downloadPage() {
   var cssContent = editor.getCss();
   const slideshowSettingsScript = buildInteractiveSlideshowSettingsScript();
 
+  // Embed page setup settings so they can be restored on re-import
+  const pageSetupScript = (window.pageSetupSettings && window.pageSetupSettings.isInitialized)
+    ? `<script id="page-setup-settings" type="application/json">${JSON.stringify(window.pageSetupSettings).replace(/<\//g, '<\\/')}</script>`
+    : '';
+
   htmlContent =
     "<html><head><style>" +
     cssContent + `  .navbar-div .hamburger-menu { display: none !important;  text-align: right;
@@ -3219,7 +3280,7 @@ function downloadPage() {
     .navbar-div .tab-container{display:none}
     }` +
     "</style></head>" +
-    htmlContent + slideshowSettingsScript + `<script>
+    htmlContent + slideshowSettingsScript + pageSetupScript + `<script>
     var hamburgerMenu = document.getElementById("hamburgerMenu"); 
         if(hamburgerMenu !==null){
           var tabContainer = document.querySelector(".tab-container");  
