@@ -3022,49 +3022,46 @@ function customTable(editor) {
                 return;
               }
               
-              let parser = window.globalFormulaParser;
-              
-              if (!parser) {
-                parser = new window.formulaParser.Parser();
-                window.globalFormulaParser = parser;
+              const parser = new window.formulaParser.Parser();
+              window.globalFormulaParser = parser;
                 
-                parser.setFunction('PERCENT', function (params) {
-                  if (params.length !== 2) return '#N/A';
-                  const base = parseFloat(params[0]);
-                  const percent = parseFloat(params[1]);
-                  if (isNaN(base) || isNaN(percent)) return '#VALUE!';
-                  const result = base * (percent / 100);
-                  return Number.isInteger(result) ? result : parseFloat(result.toFixed(10));
-                });
+              parser.setFunction('PERCENT', function (params) {
+                if (params.length !== 2) return '#N/A';
+                const base = parseFloat(params[0]);
+                const percent = parseFloat(params[1]);
+                if (isNaN(base) || isNaN(percent)) return '#VALUE!';
+                const result = base * (percent / 100);
+                return Number.isInteger(result) ? result : parseFloat(result.toFixed(10));
+              });
 
-                if (window.numberToWords && window.numberToWords.toWords) {
-                  parser.setFunction('NUMTOWORDS', function (params) {
-                    if (params.length !== 1) return '#N/A';
-                    const num = parseFloat(params[0]);
-                    if (isNaN(num)) return '#VALUE!';
+              if (window.numberToWords && window.numberToWords.toWords) {
+                parser.setFunction('NUMTOWORDS', function (params) {
+                  if (params.length !== 1) return '#N/A';
+                  const num = parseFloat(params[0]);
+                  if (isNaN(num)) return '#VALUE!';
+                  
+                  try {
+                    const integerPart = Math.floor(num);
+                    const decimalPart = num - integerPart;
                     
-                    try {
-                      const integerPart = Math.floor(num);
-                      const decimalPart = num - integerPart;
-                      
-                      if (decimalPart === 0) {
-                        return window.numberToWords.toWords(integerPart);
-                      } else {
-                        const integerWords = window.numberToWords.toWords(integerPart);
-                        const decimalString = decimalPart.toFixed(10).replace(/0+$/, '').substring(2);
-                        return integerWords + ' point ' + decimalString.split('').map(d => window.numberToWords.toWords(parseInt(d))).join(' ');
-                      }
-                    } catch (error) {
-                      return '#ERROR';
+                    if (decimalPart === 0) {
+                      return window.numberToWords.toWords(integerPart);
+                    } else {
+                      const integerWords = window.numberToWords.toWords(integerPart);
+                      const decimalString = decimalPart.toFixed(10).replace(/0+$/, '').substring(2);
+                      return integerWords + ' point ' + decimalString.split('').map(d => window.numberToWords.toWords(parseInt(d))).join(' ');
                     }
-                  });
-                }
+                  } catch (error) {
+                    return '#ERROR';
+                  }
+                });
               }
                 
               parser.on('callCellValue', function (cellCoord, done) {
                 let col = cellCoord.column.index;
                 let row = cellCoord.row.index;
                 let tableElem = document.getElementById(tableId);
+                if (!tableElem) { done(null); return; }
                 let cell = tableElem.rows[row]?.cells[col];
                 if (cell) {
                   let val = cell.getAttribute('data-formula') || cell.innerText;
@@ -3085,6 +3082,7 @@ function customTable(editor) {
 
               parser.on('callRangeValue', function (startCellCoord, endCellCoord, done) {
                 let tableElem = document.getElementById(tableId);
+                if (!tableElem) { done([]); return; }
                 let values = [];
 
                 let startRow = Math.min(startCellCoord.row.index, endCellCoord.row.index);
@@ -3549,56 +3547,54 @@ function customTable(editor) {
       console.warn('Formula parser not available');
       return;
     }
-    let parser = iframeWindow.globalFormulaParser;
-    if (!parser) {
-      parser = new iframeWindow.formulaParser.Parser();
-      iframeWindow.globalFormulaParser = parser;
+    const parser = new iframeWindow.formulaParser.Parser();
+    iframeWindow.globalFormulaParser = parser;
 
-      parser.setFunction('PERCENT', function (params) {
-        if (params.length !== 2) return '#N/A';
-        const base = parseFloat(params[0]);
-        const percent = parseFloat(params[1]);
-        if (isNaN(base) || isNaN(percent)) return '#VALUE!';
-        const result = base * (percent / 100);
-        return Number.isInteger(result) ? result : parseFloat(result.toFixed(10));
-      });
+    parser.setFunction('PERCENT', function (params) {
+      if (params.length !== 2) return '#N/A';
+      const base = parseFloat(params[0]);
+      const percent = parseFloat(params[1]);
+      if (isNaN(base) || isNaN(percent)) return '#VALUE!';
+      const result = base * (percent / 100);
+      return Number.isInteger(result) ? result : parseFloat(result.toFixed(10));
+    });
 
-      parser.setFunction('ABSOLUTE', function (params) {
+    parser.setFunction('ABSOLUTE', function (params) {
+      if (params.length !== 1) return '#N/A';
+      const num = parseFloat(params[0]);
+      if (isNaN(num)) return '#VALUE!';
+      const result = Math.abs(num);
+      return Number.isInteger(result) ? result : parseFloat(result.toFixed(10));
+    });
+
+    if (iframeWindow.numberToWords && iframeWindow.numberToWords.toWords) {
+      parser.setFunction('NUMTOWORDS', function (params) {
         if (params.length !== 1) return '#N/A';
         const num = parseFloat(params[0]);
         if (isNaN(num)) return '#VALUE!';
-        const result = Math.abs(num);
-        return Number.isInteger(result) ? result : parseFloat(result.toFixed(10));
-      });
 
-      if (iframeWindow.numberToWords && iframeWindow.numberToWords.toWords) {
-        parser.setFunction('NUMTOWORDS', function (params) {
-          if (params.length !== 1) return '#N/A';
-          const num = parseFloat(params[0]);
-          if (isNaN(num)) return '#VALUE!';
+        try {
+          const integerPart = Math.floor(num);
+          const decimalPart = num - integerPart;
 
-          try {
-            const integerPart = Math.floor(num);
-            const decimalPart = num - integerPart;
-
-            if (decimalPart === 0) {
-              return iframeWindow.numberToWords.toWords(integerPart);
-            } else {
-              const integerWords = iframeWindow.numberToWords.toWords(integerPart);
-              const decimalString = decimalPart.toFixed(10).replace(/0+$/, '').substring(2);
-              return `${integerWords} point ${decimalString.split('').map(d => iframeWindow.numberToWords.toWords(parseInt(d))).join(' ')}`;
-            }
-          } catch (error) {
-            return '#ERROR';
+          if (decimalPart === 0) {
+            return iframeWindow.numberToWords.toWords(integerPart);
+          } else {
+            const integerWords = iframeWindow.numberToWords.toWords(integerPart);
+            const decimalString = decimalPart.toFixed(10).replace(/0+$/, '').substring(2);
+            return `${integerWords} point ${decimalString.split('').map(d => iframeWindow.numberToWords.toWords(parseInt(d))).join(' ')}`;
           }
-        });
-      }
+        } catch (error) {
+          return '#ERROR';
+        }
+      });
     }
 
     parser.on('callCellValue', function (cellCoord, done) {
       let col = cellCoord.column.index;
       let row = cellCoord.row.index;
       let tableElem = iframeDoc.getElementById(tableId);
+      if (!tableElem) { done(null); return; }
       let cell = tableElem.rows[row]?.cells[col];
       if (cell) {
         let val = cell.getAttribute('data-formula') || cell.innerText;
@@ -3620,6 +3616,7 @@ function customTable(editor) {
 
     parser.on('callRangeValue', function (startCellCoord, endCellCoord, done) {
       let tableElem = iframeDoc.getElementById(tableId);
+      if (!tableElem) { done([]); return; }
       let values = [];
 
       let startRow = Math.min(startCellCoord.row.index, endCellCoord.row.index);
