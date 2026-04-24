@@ -1,0 +1,86 @@
+Bulk Export Fix Notes
+
+Files changed
+- [js/main.js](js/main.js)
+- [bulk_export_fix_notes.txt](bulk_export_fix_notes.txt)
+- [backend-reference/server.js](backend-reference/server.js) was checked for the existing bulk routes, but not modified.
+
+Functions added or changed in js/main.js
+- [restoreTemplateAwareTextForBulkExport](js/main.js#L617)
+	- Added code that finds nodes with `data-template-text` and restores the original template sentence before bulk export snapshot capture.
+	- Added a special case for `custom-heading` so its text is restored with `textContent` instead of inner HTML.
+- [buildTemplateAwareBinding](js/main.js#L1266)
+	- Added logic to detect sentence-style bindings from live canvas text.
+	- Added fallback template reconstruction when the node already contains resolved value text instead of explicit `{name}` markers.
+	- Added `syntheticPath` generation so the frontend can separate template-aware values from normal JSON fields.
+- [exportDesignAndSend](js/main.js#L1488)
+	- Added `normalizeTemplateWhitespace` to convert `&nbsp;`, `&#160;`, and `\u00a0` into spaces.
+	- Added `ensureZipLibrary` so a ZIP library with `loadAsync` can be loaded at runtime for post-processing the download.
+	- Added `filterTemplateAwareZipEntries` to inspect the returned ZIP and remove placeholder-style helper entries before the file is downloaded.
+	- Added `downloadBlob` handling so the filtered archive is downloaded instead of the raw backend ZIP when template-aware entries exist.
+	- Added guards that skip stale helper uploads whose names contain `__i_designer_template_values`.
+	- Added JSON enrichment so the resolved sentence value is written into `__i_designer_template_values` for the backend render step.
+- [normalizeTemplateWhitespace](js/main.js#L1531)
+	- Added replacements for HTML entities and unicode non-breaking spaces.
+- [ensureZipLibrary](js/main.js#L1557)
+	- Added lazy script injection for JSZip 3.10.1 when the loaded version does not support `loadAsync`.
+- [filterTemplateAwareZipEntries](js/main.js#L1586)
+	- Added ZIP inspection with `loadAsync`.
+	- Added a filter that keeps only entries whose names match the template-aware helper output path.
+	- Added regeneration of a cleaned ZIP blob for download.
+
+Other js/main.js changes
+- Template-aware binding detection was added in the bulk modal flow so resolved sentence bindings are handled separately from normal JSON-path bindings.
+- Bulk upload handling now ignores stale synthetic helper file names containing `__i_designer_template_values`.
+- The response download path now filters the ZIP so the placeholder English file is not downloaded when the resolved template output exists.
+
+Backend context checked
+- [streamBulkArchive](backend-reference/server.js#L327)
+	- Confirms the backend still generates the final bulk archive.
+- Routes checked:
+	- [uploadPdf](backend-reference/server.js#L410)
+	- [uploadHtml](backend-reference/server.js#L421)
+
+Result
+- The resolved designer template output is kept.
+- The extra placeholder English download is removed.
+- Non-breaking-space artifacts are normalized to normal spaces.
+
+One-prompt handoff for another GPT
+- Goal: fix the bulk export JSON binding issue so template text like `Insert your text here {name} and you can do that` exports as the resolved sentence, not the raw placeholder file, and so only one correct file downloads.
+- Keep the backend flow in place. Do not remove the backend upload/export routes. The backend still generates the final archive.
+- In js/main.js, keep the template-aware binding detection in the bulk modal flow.
+- Keep [buildTemplateAwareBinding](js/main.js#L1266) so sentence-style bindings are recognized and can be enriched before export.
+- Keep [exportDesignAndSend](js/main.js#L1488) as the main bulk export function.
+- In [exportDesignAndSend](js/main.js#L1488), preserve the template-aware JSON enrichment that writes the resolved sentence into `__i_designer_template_values`.
+- Keep [normalizeTemplateWhitespace](js/main.js#L1531) so `&nbsp;`, `&#160;`, and `\u00a0` become normal spaces.
+- Keep [ensureZipLibrary](js/main.js#L1557) so a compatible JSZip version can be loaded for ZIP filtering.
+- Keep [filterTemplateAwareZipEntries](js/main.js#L1586) so the returned archive can be cleaned before download.
+- Keep the logic that skips any stale helper file names containing `__i_designer_template_values`.
+- Keep the logic that filters the downloaded ZIP so the placeholder English file is not downloaded when the resolved template file exists.
+- Keep [restoreTemplateAwareTextForBulkExport](js/main.js#L617) because the export snapshot must restore the original template sentence before rendering.
+
+What code behavior should remain
+- The app should detect when a component is a sentence template, not just a normal field binding.
+- The app should render the resolved sentence using the JSON value while preserving the rest of the template text.
+- The app should not create a second unwanted output that contains only the unresolved English placeholder sentence.
+- The app should normalize non-breaking spaces in the final rendered output.
+- The backend should still receive the prepared template HTML and JSON payload and produce the final archive.
+
+If you need to recreate the fix from scratch
+1. Inspect the bulk export flow in [js/main.js](js/main.js).
+2. Find the template-aware binding detection inside the bulk modal submit path.
+3. Keep or add the binding builder that records the template sentence and resolved source path.
+4. Keep the export function that appends JSON files and the payload to FormData.
+5. Add whitespace normalization for template text before export.
+6. Add ZIP post-processing on the response blob so placeholder/helper archive entries are removed before download.
+7. Keep the backend route unchanged unless the user explicitly asks for backend work.
+
+Important line anchors
+- [restoreTemplateAwareTextForBulkExport](js/main.js#L617)
+- [buildTemplateAwareBinding](js/main.js#L1266)
+- [exportDesignAndSend](js/main.js#L1488)
+- [normalizeTemplateWhitespace](js/main.js#L1531)
+- [ensureZipLibrary](js/main.js#L1557)
+- [filterTemplateAwareZipEntries](js/main.js#L1586)
+- [streamBulkArchive](backend-reference/server.js#L327)

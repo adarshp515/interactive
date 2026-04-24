@@ -7232,6 +7232,48 @@
                       }
 
                       var iframeContent = sanitizeZipChartMarkup(e.getHtml());
+                      try {
+                        var templateAwareContainer = document.createElement('div');
+                        templateAwareContainer.innerHTML = iframeContent || '';
+                        var wrapper = e.getWrapper ? e.getWrapper() : null;
+                        var templateAwareComponents = wrapper && wrapper.find ? wrapper.find('[my-input-json]') : [];
+
+                        templateAwareComponents.forEach(function(component) {
+                          try {
+                            var componentId = component.getId ? component.getId() : (component.get && component.get('id'));
+                            if (!componentId) return;
+
+                            var targetNode = templateAwareContainer.querySelector('[id="' + String(componentId).replace(/"/g, '\\"') + '"]');
+                            if (!targetNode) return;
+
+                            var templateText = component.get ? (component.get('templateText') || '') : '';
+                            if (!templateText && component.getAttributes) {
+                              var attrs = component.getAttributes() || {};
+                              var encodedTemplateText = attrs['data-template-text'] || '';
+                              try {
+                                templateText = decodeURIComponent(String(encodedTemplateText || ''));
+                              } catch (decodeErr) {
+                                templateText = String(encodedTemplateText || '');
+                              }
+                            }
+
+                            if (!templateText || !/\{[^{}]+\}/.test(String(templateText))) return;
+
+                            targetNode.setAttribute('data-template-text', encodeURIComponent(String(templateText)));
+                            if ((targetNode.getAttribute('data-gjs-type') === 'custom-heading') || /^H[1-7]$/.test(targetNode.tagName || '')) {
+                              targetNode.textContent = templateText;
+                            } else {
+                              targetNode.innerHTML = templateText;
+                            }
+                          } catch (componentErr) {
+                            console.warn('Template restore skipped for a component during ZIP export:', componentErr);
+                          }
+                        });
+
+                        iframeContent = templateAwareContainer.innerHTML;
+                      } catch (templateRestoreErr) {
+                        console.warn('Template restore failed before ZIP export:', templateRestoreErr);
+                      }
                       // Step 1: Merge all localStorage JSONs starting with "common_json" (excluding "common_json_files")
                       let mergedCommonJson = {};
 
@@ -7858,6 +7900,47 @@
                   if(custom_language == null){
                     custom_language = 'english';
                   }      
+
+                  function decodeTemplateText(value) {
+                    try {
+                      return decodeURIComponent(String(value == null ? '' : value));
+                    } catch (err) {
+                      return String(value == null ? '' : value);
+                    }
+                  }
+
+                  function escapeRegExp(value) {
+                    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                  }
+
+                  function getPlaceholderCandidates(path) {
+                    var cleanedPath = String(path || '').trim();
+                    if (!cleanedPath) return [];
+
+                    var tokens = cleanedPath
+                      .split('.')
+                      .map(function (token) { return token.trim(); })
+                      .filter(Boolean);
+
+                    var candidates = [];
+                    if (cleanedPath) candidates.push(cleanedPath);
+                    if (tokens.length > 1) {
+                      candidates.push(tokens[tokens.length - 1]);
+                      candidates.push(tokens.slice(1).join('.'));
+                    }
+
+                    return Array.from(new Set(candidates.filter(Boolean)));
+                  }
+
+                  function renderTemplateValue(templateText, path, value) {
+                    var rendered = decodeTemplateText(templateText);
+                    getPlaceholderCandidates(path).forEach(function (candidate) {
+                      var placeholder = '{' + candidate + '}';
+                      var escaped = escapeRegExp(placeholder);
+                      rendered = rendered.replace(new RegExp(escaped, 'g'), String(value));
+                    });
+                    return rendered;
+                  }
                   
                   function updateDivContent() {  
                     var styleTags = document.getElementsByTagName('style');
@@ -7878,8 +7961,14 @@
                       const str = 'jsonData1[0].' + custom_language + '.' + jsonKey2; 
                       var value = eval(str);  
                       var div = document.getElementById(divId); 
-                      if (div && value) {  
-                        div.textContent = value;
+                      if (div && value !== undefined && value !== null) {  
+                        var templateText = div.getAttribute('data-template-text') || div.textContent || '';
+                        var hasTemplateTokens = /\{[^{}]+\}/.test(String(templateText || ''));
+                        if (div.hasAttribute('data-template-text') || hasTemplateTokens) {
+                          div.textContent = renderTemplateValue(templateText, jsonKey2, value);
+                        } else {
+                          div.textContent = value;
+                        }
                       }  
                     }
                   } 
@@ -8303,6 +8392,9 @@ window.addEventListener('load', function() {
                       } else {
                         exportChecks[ci].removeAttribute('checked');
                       }
+                    }
+                    if (typeof restoreTemplateAwareTextForBulkExport === 'function') {
+                      restoreTemplateAwareTextForBulkExport(htmlTempDiv);
                     }
                     htmlContent = htmlTempDiv.innerHTML;
                   }

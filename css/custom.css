@@ -66,3 +66,81 @@ table tbody td{
   text-align: center;
   line-height: normal;
 }
+
+/* ===================== BLOCK SEARCH BAR ===================== */
+.block-search-wrapper {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 8px 10px;
+  background: #3b2d6e;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.block-search-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.block-search-icon {
+  position: absolute;
+  left: 10px;
+  color: rgba(255,255,255,0.5);
+  font-size: 14px;
+  pointer-events: none;
+}
+#block-search-input {
+  width: 100%;
+  padding: 7px 32px 7px 32px;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  font-size: 13px;
+  outline: none;
+  transition: all 0.25s ease;
+  font-family: inherit;
+}
+#block-search-input::placeholder {
+  color: rgba(255,255,255,0.4);
+}
+#block-search-input:focus {
+  border-color: rgba(255,255,255,0.5);
+  background: rgba(255,255,255,0.12);
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.08);
+}
+.block-search-clear {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.5);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+  display: none;
+  line-height: 1;
+}
+.block-search-clear:hover {
+  color: #fff;
+}
+.block-search-count {
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
+  margin-top: 4px;
+  text-align: center;
+  display: none;
+}
+
+/* Hide non-matching blocks and categories */
+.i_designer-block.block-search-hidden {
+  display: none !important;
+}
+.i_designer-block-category.block-search-hidden {
+  display: none !important;
+}
+
+/* Highlight matching blocks */
+.i_designer-block.block-search-match {
+  border-color: rgba(255,255,255,0.3) !important;
+  box-shadow: 0 0 6px rgba(255,255,255,0.1);
+}

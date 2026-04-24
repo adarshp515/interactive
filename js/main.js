@@ -1,4 +1,4 @@
-
+﻿
 window.editor = InteractiveDesigner.init({
   height: "100%",
   container: "#editor",
@@ -491,7 +491,7 @@ function getHtmlWithCurrentFormState(editor) {
       });
 
       if (liveNode.hasAttribute("data-template-text") || liveNode.hasAttribute("my-input-json")) {
-        exportNode.innerHTML = liveNode.innerHTML;
+        exportNode.innerHTML = resolveDataBoundExportContent(liveNode) || liveNode.innerHTML;
       }
     });
 
@@ -549,7 +549,7 @@ function getPdfPreviewHtmlFromLiveCanvas(editor) {
       }
     });
 
-    exportNode.innerHTML = liveNode.innerHTML;
+    exportNode.innerHTML = resolveDataBoundExportContent(liveNode) || liveNode.innerHTML;
   });
 
   if (typeof window.syncFlowLayoutsFromLiveDoc === "function") {
@@ -631,6 +631,60 @@ function restoreTemplateAwareTextForBulkExport(root) {
 
     node.innerHTML = templateText;
   });
+}
+
+function getTemplateAwareBindingIdSet(editor) {
+  const ids = new Set();
+
+  try {
+    const frameEl = editor.Canvas && editor.Canvas.getFrameEl ? editor.Canvas.getFrameEl() : null;
+    const liveDoc = frameEl && (frameEl.contentDocument || (frameEl.contentWindow && frameEl.contentWindow.document));
+
+    if (liveDoc && liveDoc.body) {
+      liveDoc.body.querySelectorAll("[id][my-input-json]").forEach((node) => {
+        const templateText = decodeDatasourceTemplateText(
+          node.getAttribute("data-template-text") || ""
+        );
+
+        if (hasDatasourceTemplatePlaceholders(templateText)) {
+          ids.add(node.id);
+        }
+      });
+    }
+  } catch (err) {
+    console.warn("Failed to inspect live template-aware bindings:", err);
+  }
+
+  try {
+    if (typeof walkComponentTree === "function") {
+      const wrapper = editor.getWrapper && editor.getWrapper();
+
+      if (wrapper) {
+        walkComponentTree(wrapper, (component) => {
+          const componentId = component && component.getId ? component.getId() : "";
+          if (!componentId) return;
+
+          const attrs = component && component.getAttributes ? component.getAttributes() : {};
+          const jsonPath = String(
+            (component && component.get ? component.get("my-input-json") : "") ||
+            attrs["my-input-json"] ||
+            ""
+          ).trim();
+
+          if (!jsonPath) return;
+
+          const templateText = getComponentTemplateText(component);
+          if (hasDatasourceTemplatePlaceholders(templateText)) {
+            ids.add(componentId);
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to inspect component template-aware bindings:", err);
+  }
+
+  return ids;
 }
 
 editor.Commands.add("open-modal", {
@@ -825,6 +879,10 @@ editor.Commands.add("open-modal", {
     document.getElementById("json-upload-input").addEventListener("change", async (e) => {
       const files = Array.from(e.target.files);
       for (const file of files) {
+        if (String(file.name || "").toLowerCase().includes("__i_designer_template_values")) {
+          continue;
+        }
+
         const text = await file.text();
         let parsedData = null;
         const fileExtension = file.name.split(".").pop().toLowerCase();
@@ -883,6 +941,10 @@ editor.Commands.add("open-modal", {
         typeof getStoredJsonFileNames === "function" ? getStoredJsonFileNames() : [];
 
       storedFileNames.forEach((fileName) => {
+        if (String(fileName || "").toLowerCase().includes("__i_designer_template_values")) {
+          return;
+        }
+
         const normalizedName = normalizeBulkDatasourceFileName(fileName);
         const possibleKeys = [
           `common_json_${fileName}`,
@@ -1169,7 +1231,116 @@ editor.Commands.add("open-modal", {
         if (passwordCustom) passwordPayload = [passwordCustom];
       }
 
-      const finalPayload = [...inputJsonMappings];
+      const templateAwareBindingIds = getTemplateAwareBindingIdSet(editor);
+      const frameEl = editor.Canvas && editor.Canvas.getFrameEl ? editor.Canvas.getFrameEl() : null;
+      const liveDoc = frameEl && (frameEl.contentDocument || (frameEl.contentWindow && frameEl.contentWindow.document));
+
+      const templateAwareBindingsById = new Map();
+
+      const isCompositeSentenceBinding = (bindingId, bindingPath) => {
+        try {
+          if (!liveDoc || !bindingId || !bindingPath) return false;
+
+          const targetNode = liveDoc.getElementById(bindingId);
+          if (!targetNode) return false;
+
+          const nodeText = String(targetNode.textContent || "").trim();
+          if (!nodeText) return false;
+
+          const jsonFileIndex = String(targetNode.getAttribute("data-json-file-index") || "0").trim() || "0";
+          const commonJson = getJsonDataByFileIndex(jsonFileIndex);
+          if (!commonJson) return false;
+
+          const resolvedValue = resolveValueFromDatasource(commonJson, bindingPath);
+          if (resolvedValue === undefined || resolvedValue === null) return false;
+
+          const resolvedText = String(resolvedValue).trim();
+          if (!resolvedText) return false;
+
+          return nodeText !== resolvedText && nodeText.includes(resolvedText);
+        } catch (err) {
+          return false;
+        }
+      };
+
+      const buildTemplateAwareBinding = (bindingId, bindingPath) => {
+        if (!liveDoc || !bindingId || !bindingPath) return null;
+
+        try {
+          const targetNode = liveDoc.getElementById(bindingId);
+          if (!targetNode) return null;
+
+          let templateText = decodeDatasourceTemplateText(
+            targetNode.getAttribute("data-template-text") || ""
+          );
+
+          const jsonFileIndex = String(targetNode.getAttribute("data-json-file-index") || "0").trim() || "0";
+          const commonJson = getJsonDataByFileIndex(jsonFileIndex);
+          const resolvedValue = commonJson
+            ? resolveValueFromDatasource(commonJson, bindingPath)
+            : undefined;
+          const resolvedText = resolvedValue == null ? "" : String(resolvedValue).trim();
+
+          if (!hasDatasourceTemplatePlaceholders(templateText)) {
+            const nodeText = String(targetNode.textContent || targetNode.innerText || "").trim();
+
+            if (nodeText) {
+              const pathTokens = String(bindingPath || "")
+                .split(".")
+                .map((token) => token.trim())
+                .filter(Boolean);
+              const fallbackToken = pathTokens[pathTokens.length - 1] || "value";
+
+              if (resolvedText && nodeText.includes(resolvedText)) {
+                templateText = nodeText.replace(resolvedText, `{${fallbackToken}}`);
+              } else if (/\{[^{}]+\}/.test(nodeText)) {
+                templateText = nodeText;
+              }
+            }
+          }
+
+          if (!hasDatasourceTemplatePlaceholders(templateText)) {
+            return null;
+          }
+
+          return {
+            id: bindingId,
+            sourcePath: bindingPath,
+            templateText,
+            syntheticPath: `__i_designer_template_values.${bindingId}`,
+          };
+        } catch (err) {
+          return null;
+        }
+      };
+
+      const filteredInputJsonMappings = inputJsonMappings.reduce((acc, mapping) => {
+        const mappingKeys = Object.keys(mapping || {});
+        if (!mappingKeys.length) return acc;
+
+        const mappingKey = mappingKeys[0];
+        const mappingPath = String(mapping[mappingKey] || "").trim();
+
+        const shouldTreatAsTemplateAware =
+          templateAwareBindingIds.has(mappingKey) ||
+          isCompositeSentenceBinding(mappingKey, mappingPath);
+
+        if (shouldTreatAsTemplateAware) {
+          const binding = buildTemplateAwareBinding(mappingKey, mappingPath);
+          if (binding) {
+            templateAwareBindingsById.set(mappingKey, binding);
+            acc.push({ [mappingKey]: binding.syntheticPath });
+          }
+          return acc;
+        }
+
+        acc.push(mapping);
+        return acc;
+      }, []);
+
+      const templateAwareBindings = Array.from(templateAwareBindingsById.values());
+
+      const finalPayload = [...filteredInputJsonMappings];
 
       if (fileNamePayload) {
         finalPayload.push({ file_name: fileNamePayload });
@@ -1180,7 +1351,11 @@ editor.Commands.add("open-modal", {
       }
 
       try {
-        const message = await exportDesignAndSend(editor, finalPayload);
+        const message = await exportDesignAndSend(
+          editor,
+          finalPayload,
+          templateAwareBindings
+        );
         alert("✅ " + message);
       } catch (err) {
 
@@ -1310,12 +1485,142 @@ async function convertXmlToJson(xmlContent, fileName) {
   });
 }
 
-async function exportDesignAndSend(editor, inputJsonMappings) {
+async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindings = []) {
   const exportType = document.getElementById("export-type-dropdown")?.value || "pdf";
 const apiUrl =
   exportType === "pdf"
     ? `${API_BASE_URL}/uploadPdf`
     : `${API_BASE_URL}/uploadHtml`;
+
+  const effectiveTemplateBindings = Array.isArray(templateAwareBindings)
+    ? templateAwareBindings.filter((binding) =>
+      binding && binding.id && binding.sourcePath && binding.syntheticPath && binding.templateText
+    )
+    : [];
+
+  const escapeRegExp = (value) => String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  const applyTemplateAwarePathOverrides = (root, cssText) => {
+    let nextCss = String(cssText || "");
+    if (!root || !effectiveTemplateBindings.length) return nextCss;
+
+    effectiveTemplateBindings.forEach((binding) => {
+      const bindingId = String(binding.id);
+      const syntheticPath = String(binding.syntheticPath);
+
+      const targetNode = root.querySelector(`[id="${bindingId.replace(/"/g, '\\"')}"]`);
+      if (targetNode) {
+        targetNode.setAttribute("my-input-json", syntheticPath);
+      }
+
+      const escapedId = escapeRegExp(bindingId);
+      const cssBindingRegex = new RegExp(
+        `(#${escapedId}\\s*\\{[^}]*?my-input-json\\s*:\\s*)([^;]+)(;)`,
+        "gi",
+      );
+      nextCss = nextCss.replace(cssBindingRegex, `$1${syntheticPath}$3`);
+    });
+
+    return nextCss;
+  };
+
+  const renderTemplateAwareValue = (binding, jsonObject) => {
+    const resolvedValue = resolveValueFromDatasource(jsonObject, binding.sourcePath);
+    if (resolvedValue === undefined || resolvedValue === null) return null;
+
+    const normalizeTemplateWhitespace = (value) =>
+      String(value == null ? "" : value)
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&#160;/gi, " ")
+        .replace(/\u00a0/g, " ");
+
+    const resolvedTextValue = normalizeTemplateWhitespace(resolvedValue);
+    let renderedText = normalizeTemplateWhitespace(binding.templateText || "");
+    const placeholderTokens = getPlaceholderTokensFromPath(jsonObject, binding.sourcePath);
+
+    if (!placeholderTokens.length) {
+      return resolvedTextValue;
+    }
+
+    placeholderTokens.forEach((placeholderToken) => {
+      const placeholder = `{${placeholderToken}}`;
+      const escapedPlaceholder = escapeRegExp(placeholder);
+      renderedText = renderedText.replace(
+        new RegExp(escapedPlaceholder, "g"),
+        resolvedTextValue,
+      );
+    });
+
+    return normalizeTemplateWhitespace(renderedText);
+  };
+
+  const ensureZipLibrary = async () => {
+    if (typeof JSZip !== "undefined" && typeof JSZip.loadAsync === "function") {
+      return JSZip;
+    }
+
+    await new Promise((resolve, reject) => {
+      const existingLoader = document.getElementById("i-designer-jszip-v3-loader");
+      if (existingLoader) {
+        existingLoader.addEventListener("load", resolve, { once: true });
+        existingLoader.addEventListener("error", reject, { once: true });
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.id = "i-designer-jszip-v3-loader";
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+      script.async = true;
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+
+    if (typeof JSZip !== "undefined" && typeof JSZip.loadAsync === "function") {
+      return JSZip;
+    }
+
+    return null;
+  };
+
+  const filterTemplateAwareZipEntries = async (archiveBlob) => {
+    if (!archiveBlob) return archiveBlob;
+
+    const ZipLib = await ensureZipLibrary();
+    if (!ZipLib) return archiveBlob;
+
+    const sourceZip = await ZipLib.loadAsync(archiveBlob);
+    const fileEntries = [];
+
+    sourceZip.forEach((relativePath, zipEntry) => {
+      if (!zipEntry.dir) {
+        fileEntries.push(relativePath);
+      }
+    });
+
+    const templateHelperEntries = fileEntries.filter((entryName) =>
+      /__i_designer_template_values/i.test(entryName),
+    );
+
+    if (!templateHelperEntries.length) {
+      return archiveBlob;
+    }
+
+    const resultZip = new ZipLib();
+
+    for (const entryName of templateHelperEntries) {
+      const entry = sourceZip.file(entryName);
+      if (!entry) continue;
+
+      const entryData = await entry.async("uint8array");
+      const sanitizedName = entryName.replace(/__i_designer_template_values[_-]*/gi, "");
+      const fallbackName = sanitizedName.trim() || entryName;
+
+      resultZip.file(fallbackName, entryData);
+    }
+
+    return resultZip.generateAsync({ type: "blob" });
+  };
 
 
   const html = getHtmlWithCurrentFormState(editor);
@@ -1370,6 +1675,7 @@ const apiUrl =
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = html;
     restoreTemplateAwareTextForBulkExport(tempDiv);
+    let workingCss = applyTemplateAwarePathOverrides(tempDiv, css);
 
     // Hide editor-only page-break markers in Bulk Export output.
     tempDiv.querySelectorAll('.page-break').forEach((el) => {
@@ -1383,7 +1689,7 @@ const apiUrl =
       if (el.id) idsToClean.push(el.id);
     });
 
-    let cleanedCss = css;
+    let cleanedCss = workingCss;
 
     idsToClean.forEach((id) => {
       const idRegex = new RegExp(`(#${id}\\s*{[^}]*?)margin[^;]*;`, "g");
@@ -1406,6 +1712,7 @@ const apiUrl =
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = html;
     restoreTemplateAwareTextForBulkExport(tempDiv);
+    const workingCss = applyTemplateAwarePathOverrides(tempDiv, css);
 
     // Hide editor-only page-break markers in Bulk Export output.
     tempDiv.querySelectorAll('.page-break').forEach((el) => {
@@ -1419,7 +1726,7 @@ const apiUrl =
           <meta charset="utf-8" />
           ${externalStyles}
           ${externalScripts}
-          <style>${css}</style>
+          <style>${workingCss}</style>
         </head>
         <body>${tempDiv.innerHTML}</body>
       </html>
@@ -1431,6 +1738,12 @@ const apiUrl =
 
   for (let idx = 0; idx < uploadedJsonFiles.length; idx++) {
     const f = uploadedJsonFiles[idx];
+
+    // Ignore stale synthetic helper files if present in local storage/upload list.
+    if (String(f?.name || "").toLowerCase().includes("__i_designer_template_values")) {
+      continue;
+    }
+
     const fileExtension = f.name.split(".").pop().toLowerCase();
 
     let jsonContent = f.content;
@@ -1444,6 +1757,35 @@ const apiUrl =
       } catch (err) {
         alert(`Failed to convert XML file: ${f.name}`);
         throw err;
+      }
+    }
+
+    if (effectiveTemplateBindings.length) {
+      try {
+        const jsonObject = JSON.parse(String(jsonContent || "{}"));
+
+        if (!jsonObject || typeof jsonObject !== "object" || Array.isArray(jsonObject)) {
+          throw new Error("Invalid JSON object for template-aware bindings");
+        }
+
+        if (
+          !jsonObject.__i_designer_template_values ||
+          typeof jsonObject.__i_designer_template_values !== "object" ||
+          Array.isArray(jsonObject.__i_designer_template_values)
+        ) {
+          jsonObject.__i_designer_template_values = {};
+        }
+
+        effectiveTemplateBindings.forEach((binding) => {
+          const renderedValue = renderTemplateAwareValue(binding, jsonObject);
+          if (renderedValue !== null && renderedValue !== undefined) {
+            jsonObject.__i_designer_template_values[binding.id] = String(renderedValue);
+          }
+        });
+
+        jsonContent = JSON.stringify(jsonObject);
+      } catch (bindingErr) {
+        console.warn("Template-aware JSON enrichment skipped for a file:", bindingErr);
       }
     }
 
@@ -1507,7 +1849,17 @@ const apiUrl =
     const blob = await response.blob();
     const filename = getFilenameFromResponse(response, "export.zip");
 
-    const url = URL.createObjectURL(blob);
+    let downloadBlob = blob;
+    if (effectiveTemplateBindings.length && /\.zip$/i.test(filename || "")) {
+      try {
+        downloadBlob = await filterTemplateAwareZipEntries(blob);
+      } catch (zipErr) {
+        console.warn("Template-aware ZIP filtering failed; downloading original archive.", zipErr);
+        downloadBlob = blob;
+      }
+    }
+
+    const url = URL.createObjectURL(downloadBlob);
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;
@@ -2014,29 +2366,9 @@ const apiUrl = `${API_BASE_URL}/uploadHtmlToPdf?file`;
       ? subreportStyles.join('\n')
       : '';
 
-    // PDF overflow guard — prevents plugin iframes/images/charts that are
-    // wider than the A4 page from pushing the renderer into extra blank pages.
-    const pdfOverflowGuardCSS = `<style>
-  .page-container { overflow: hidden !important; }
-  .page-content, .content-wrapper, .main-content-area { overflow: hidden !important; }
-  .page-container iframe,
-  .page-container img,
-  .page-container canvas,
-  .page-container video,
-  .page-container embed,
-  .page-container object,
-  .page-container svg,
-  .page-container .highcharts-container,
-  .page-container [data-i_designer-type] {
-    max-width: 100% !important;
-    box-sizing: border-box !important;
-  }
-</style>`;
-
     const combinedStyles = `
   <style>${mainCSS}</style>
   ${subStyles}
-  ${pdfOverflowGuardCSS}
 `;
 
     const parser = new DOMParser();
@@ -2142,7 +2474,7 @@ const apiUrl = `${API_BASE_URL}/uploadHtmlToPdf?file`;
           return;
         }
 
-        setTimeout(check, 2000);
+        setTimeout(check, 2050);
       }
 
       check();
@@ -3128,18 +3460,6 @@ function extractSavedPageImportPayload(rawHtml) {
     settingsScript.remove();
   }
 
-  // Extract embedded page setup settings (A4/letter size etc.) saved by downloadPage
-  const pageSetupScript = parsedDoc.getElementById("page-setup-settings");
-  let importedPageSetupSettings = null;
-  if (pageSetupScript) {
-    try {
-      importedPageSetupSettings = JSON.parse(pageSetupScript.textContent || "{}");
-    } catch (err) {
-      console.error("Failed to parse page setup settings from imported page:", err);
-    }
-    pageSetupScript.remove();
-  }
-
   const cssText = Array.from(parsedDoc.querySelectorAll("head style"))
     .map((styleTag) => styleTag.textContent || "")
     .join("\n");
@@ -3151,8 +3471,7 @@ function extractSavedPageImportPayload(rawHtml) {
   return {
     bodyHtml,
     cssText,
-    slideshowSettings,
-    importedPageSetupSettings
+    slideshowSettings
   };
 }
 
@@ -3170,42 +3489,21 @@ function scheduleInteractiveSlideshowRestore(reason = "interactive-slideshow-res
 
 function applyImportedSinglePage(rawHtml, reason = "import-single-page", options = {}) {
   const { closeModal = true } = options;
-  const { bodyHtml, cssText, slideshowSettings, importedPageSetupSettings } = extractSavedPageImportPayload(rawHtml);
+  const { bodyHtml, cssText, slideshowSettings } = extractSavedPageImportPayload(rawHtml);
 
   sessionStorage.setItem('single-page', JSON.stringify(rawHtml));
   window.slideshowSettings = slideshowSettings || null;
   window.__iDesignerImportingPage = true;
 
-  // Set components first so GrapesJS initialises component models;
-  // then apply CSS so ID-scoped width/height rules are not overridden
-  // by the page-manager plugin's default component styles.
-  editor.setComponents(bodyHtml || rawHtml);
-
   if (cssText && typeof editor.setStyle === "function") {
     editor.setStyle(cssText);
   }
 
+  editor.setComponents(bodyHtml || rawHtml);
   scheduleDatasourceRebind(reason, 250);
 
   if (slideshowSettings || /data-slide\s*=/.test(bodyHtml || rawHtml || "")) {
     scheduleInteractiveSlideshowRestore(reason, 500);
-  }
-
-  // Restore embedded page setup (A4 size, margins, etc.) after components settle
-  if (importedPageSetupSettings && importedPageSetupSettings.isInitialized) {
-    window.setTimeout(() => {
-      try {
-        const mgr = window.pageSetupManager || editor.PageSetupManager;
-        if (mgr && typeof mgr.importPageSettings === 'function') {
-          mgr.importPageSettings(importedPageSetupSettings);
-          if (typeof mgr.updatePageRule === 'function') mgr.updatePageRule();
-          if (typeof mgr.updateNavbarButton === 'function') mgr.updateNavbarButton();
-          if (typeof mgr.updateAddPageButton === 'function') mgr.updateAddPageButton();
-        }
-      } catch (e) {
-        console.error('[Import] Failed to restore page setup settings:', e);
-      }
-    }, 700);
   }
 
   window.setTimeout(() => {
@@ -3219,9 +3517,7 @@ function applyImportedSinglePage(rawHtml, reason = "import-single-page", options
   const tempDiv = document.createElement('div');
   tempDiv.innerHTML = bodyHtml || rawHtml;
   tempDiv.querySelectorAll('script').forEach(scr => {
-    if (scr.id === 'interactive-designer-slideshow-settings' ||
-        scr.id === 'page-setup-settings' ||
-        scr.type === 'application/json') {
+    if (scr.id === 'interactive-designer-slideshow-settings' || scr.type === 'application/json') {
       return;
     }
 
@@ -3261,11 +3557,6 @@ function downloadPage() {
   var cssContent = editor.getCss();
   const slideshowSettingsScript = buildInteractiveSlideshowSettingsScript();
 
-  // Embed page setup settings so they can be restored on re-import
-  const pageSetupScript = (window.pageSetupSettings && window.pageSetupSettings.isInitialized)
-    ? `<script id="page-setup-settings" type="application/json">${JSON.stringify(window.pageSetupSettings).replace(/<\//g, '<\\/')}</script>`
-    : '';
-
   htmlContent =
     "<html><head><style>" +
     cssContent + `  .navbar-div .hamburger-menu { display: none !important;  text-align: right;
@@ -3280,7 +3571,7 @@ function downloadPage() {
     .navbar-div .tab-container{display:none}
     }` +
     "</style></head>" +
-    htmlContent + slideshowSettingsScript + pageSetupScript + `<script>
+    htmlContent + slideshowSettingsScript + `<script>
     var hamburgerMenu = document.getElementById("hamburgerMenu"); 
         if(hamburgerMenu !==null){
           var tabContainer = document.querySelector(".tab-container");  
@@ -3743,6 +4034,49 @@ function getPlaceholderTokenFromPath(commonJson, fullPath) {
   return getPlaceholderTokensFromPath(commonJson, fullPath)[0] || "";
 }
 
+function resolveDataBoundExportContent(liveNode) {
+  const templateText = decodeDatasourceTemplateText(
+    liveNode.getAttribute("data-template-text") || ""
+  );
+  const jsonPath = String(liveNode.getAttribute("my-input-json") || "").trim();
+  const fileIndex = String(liveNode.getAttribute("data-json-file-index") || "0").trim() || "0";
+
+  if (!templateText || !jsonPath) {
+    return null;
+  }
+
+  const commonJson = getJsonDataByFileIndex(fileIndex);
+  if (!commonJson) {
+    return null;
+  }
+
+  const jsonPaths = jsonPath.split(",").map((path) => path.trim()).filter(Boolean);
+  if (!jsonPaths.length) {
+    return null;
+  }
+
+  let renderedContent = templateText;
+
+  jsonPaths.forEach((path) => {
+    const resolvedValue = resolveValueFromDatasource(commonJson, path);
+    if (resolvedValue === undefined || resolvedValue === null) return;
+
+    const placeholderTokens = getPlaceholderTokensFromPath(commonJson, path);
+    if (!placeholderTokens.length) return;
+
+    placeholderTokens.forEach((placeholderToken) => {
+      const placeholder = `{${placeholderToken}}`;
+      const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      renderedContent = renderedContent.replace(
+        new RegExp(escapedPlaceholder, "g"),
+        String(resolvedValue)
+      );
+    });
+  });
+
+  return renderedContent;
+}
+
 function getComponentDatasourceState(component, cssBindings) {
   const attrs = component && component.getAttributes ? component.getAttributes() : {};
   const componentId = component && component.getId ? component.getId() : "";
@@ -4153,3 +4487,4 @@ window.addEventListener('beforeunload', function (e) {
     e.returnValue = '';
   }
 });
+

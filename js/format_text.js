@@ -804,11 +804,16 @@ function addFormattedRichTextComponent(editor) {
   editor.DomComponents.addType('formatted-rich-text', {
     model: {
       defaults: {
-        tagName: 'div',
+        tagName: 'p',
         draggable: true,
         droppable: false,
         editable: false,
         content: 'Insert your text here',
+        attributes: {
+          class: 'paragraph',
+          'data-i_designer-type': 'text',
+          'data-i_designer-highlightable': 'true'
+        },
         traits: [
           {
             type: 'checkbox',
