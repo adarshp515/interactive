@@ -807,7 +807,7 @@ function addFormattedRichTextComponent(editor) {
         tagName: 'p',
         draggable: true,
         droppable: false,
-        editable: false,
+        editable: true,
         content: 'Insert your text here',
         attributes: {
           class: 'paragraph',
@@ -1520,7 +1520,8 @@ function addFormattedRichTextComponent(editor) {
         }, 150);
 
         this.el.addEventListener('input', this.rteChangeHandler);
-        this.el.addEventListener('paste', this.handleRTEPaste.bind(this));
+        this.rtePasteHandler = this.handleRTEPaste.bind(this);
+        this.el.addEventListener('paste', this.rtePasteHandler);
 
         this.globalClickHandler = (e) => {
           if (!this.rteActive) return;
@@ -1634,8 +1635,12 @@ function addFormattedRichTextComponent(editor) {
 
         if (this.rteChangeHandler) {
           this.el.removeEventListener('input', this.rteChangeHandler);
-          this.el.removeEventListener('paste', this.handleRTEPaste);
           this.rteChangeHandler = null;
+        }
+
+        if (this.rtePasteHandler) {
+          this.el.removeEventListener('paste', this.rtePasteHandler);
+          this.rtePasteHandler = null;
         }
 
         if (this.globalClickHandler) {
@@ -1793,7 +1798,7 @@ function addFormattedRichTextComponent(editor) {
 
       onRender() {
 
-        this.el.contentEditable = false;
+        this.el.contentEditable = !!this.rteActive;
         const formatType = this.model.get('format-type') || 'text';
         const label = getFormatLabel(formatType);
         this.el.setAttribute('title', label);

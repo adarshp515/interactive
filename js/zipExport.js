@@ -7910,7 +7910,7 @@
                   }
 
                   function escapeRegExp(value) {
-                    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    return String(value || '').replace(/[.*+?^\${}()|[\]\\]/g, '\\$&');
                   }
 
                   function getPlaceholderCandidates(path) {
@@ -8116,6 +8116,8 @@ window.addEventListener('load', function() {
     });
   }, 500);
 });                </script>
+                     <script src="https://code.highcharts.com/highcharts-3d.js"></script>
+                     <script src="https://code.highcharts.com/highcharts-more.js"></script>
                      <script>${e.getJs()}</script></body>\n</html>`;
                       data = data.replace(/\n/g, '');
                       data = data.replace(/\t/g, ' ');
@@ -8417,6 +8419,8 @@ window.addEventListener('load', function() {
                   <script>
                   var jsonData1 = ${exportedJsonData};
                   </script>
+                  <script src="https://code.highcharts.com/highcharts-3d.js"></script>
+                  <script src="https://code.highcharts.com/highcharts-more.js"></script>
                   <script>${editor.getJs()}</script>
                   </body></html>`;
 
@@ -8431,6 +8435,8 @@ window.addEventListener('load', function() {
                   window.slideshowSettings = ${JSON.stringify(slideshowSettings)};
                   ` : ``}
                   </script>
+                  <script src="https://code.highcharts.com/highcharts-3d.js"></script>
+                  <script src="https://code.highcharts.com/highcharts-more.js"></script>
                   <script>${editor.getJs()}</script>
                   </html>`;
 

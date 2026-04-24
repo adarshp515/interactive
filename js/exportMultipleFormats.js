@@ -52,6 +52,31 @@ function exportPlugin(editor) {
       }
     });
 
+    const exportNodesById = new Map();
+    tempDiv.querySelectorAll("[id]").forEach((node) => {
+      if (node.id) {
+        exportNodesById.set(node.id, node);
+      }
+    });
+
+    liveDoc.body.querySelectorAll("[id]").forEach((liveNode) => {
+      const exportNode = exportNodesById.get(liveNode.id);
+      if (!exportNode) return;
+
+      if (
+        liveNode.hasAttribute("contenteditable") ||
+        liveNode.hasAttribute("data-template-text") ||
+        liveNode.hasAttribute("my-input-json")
+      ) {
+        exportNode.innerHTML = liveNode.innerHTML;
+        return;
+      }
+
+      if (exportNode.innerHTML !== liveNode.innerHTML && shouldSyncTextNodeContent(exportNode, liveNode)) {
+        exportNode.innerHTML = liveNode.innerHTML;
+      }
+    });
+
     if (typeof window.syncFlowLayoutsFromLiveDoc === "function") {
       window.syncFlowLayoutsFromLiveDoc(tempDiv, liveDoc.body);
     }
@@ -84,6 +109,21 @@ function exportPlugin(editor) {
       if (byId) return byId;
     }
     return null;
+  }
+
+  function shouldSyncTextNodeContent(exportNode, liveNode) {
+    if (!exportNode || !liveNode) return false;
+
+    const tag = String(exportNode.tagName || "").toUpperCase();
+    const textTags = ["P", "SPAN", "DIV", "SECTION", "ARTICLE", "H1", "H2", "H3", "H4", "H5", "H6", "LI", "BLOCKQUOTE", "LABEL"];
+
+    if (!textTags.includes(tag)) return false;
+
+    if (liveNode.querySelector && liveNode.querySelector("img, canvas, svg, table, input, textarea, select")) {
+      return false;
+    }
+
+    return true;
   }
 
   function getVisualNodeSize(exportNode, liveNode) {
