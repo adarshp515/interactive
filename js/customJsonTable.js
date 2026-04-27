@@ -468,6 +468,23 @@ function jsontablecustom(editor) {
             init() {
                 this.ensureSharedTableId();
                 this._isRestoring = true;
+                // Normalize persisted style state into live style traits so continuation tables keep the same theme.
+                const applyPersistedTheme = (parsedState) => {
+                    const styles = parsedState && parsedState.styles;
+                    if (!styles || typeof styles !== 'object') return;
+
+                    this.set('table-border-style', styles.borderStyle || 'solid', { silent: true });
+                    this.set('table-border-width', styles.borderWidth || '1', { silent: true });
+                    this.set('table-border-color', styles.borderColor || '#000000', { silent: true });
+                    this.set('table-border-opacity', styles.borderOpacity || '100', { silent: true });
+                    this.set('table-bg-color', styles.bgColor || '#ffffff', { silent: true });
+                    this.set('table-text-color', styles.textColor || '#000000', { silent: true });
+                    this.set('table-font-family', styles.fontFamily || 'Arial, sans-serif', { silent: true });
+                    this.set('table-text-align', styles.textAlign || 'left', { silent: true });
+                    this.set('table-vertical-align', styles.verticalAlign || 'middle', { silent: true });
+
+                    console.debug('json-table: rehydrated persisted theme styles');
+                };
                 try {
                     const attrs = this.getAttributes ? this.getAttributes() : {};
                     const encoded = attrs && attrs['data-json-state'];
@@ -490,6 +507,7 @@ function jsontablecustom(editor) {
                         this.set('custom-data', parsed.data || null, { silent: true });
                         this.set('table-styles-applied', parsed.styles || null, { silent: true });
                         this.set('highlight-conditions', parsed.highlights || null, { silent: true });
+                        applyPersistedTheme(parsed);
                     }
                 } catch (e) {
                     this._isRestoring = false;
@@ -509,7 +527,7 @@ function jsontablecustom(editor) {
                             if (t) {
                                 t.set('options', []);
                                 t.set('value', '');
-                                if (t.view && t.view.render) t.view.render();
+                                if (t.view & t.view.render) t.view.render();
                             }
                         });
                         if (trait.view && trait.view.render) trait.view.render();
@@ -559,6 +577,7 @@ function jsontablecustom(editor) {
                         this.set('custom-data', parsed.data || null, { silent: true });
                         this.set('table-styles-applied', parsed.styles || null, { silent: true });
                         this.set('highlight-conditions', parsed.highlights || null, { silent: true });
+                        applyPersistedTheme(parsed);
 
                         if (parsed.filter) {
                             this.set('filter-column', parsed.filter.column || '', { silent: true });
@@ -926,6 +945,8 @@ function jsontablecustom(editor) {
                 const borderColorWithOpacity = `rgba(${rgbBorder.r}, ${rgbBorder.g}, ${rgbBorder.b}, ${opacity})`;
                 const wrapper = editor.DomComponents.getWrapper();
                 const tableComp = wrapper.find(`#${tableId}`)[0];
+                // Only force a uniform cell background when the user explicitly changed it away from default.
+                const isDefaultBg = (!bgColor) || bgColor === '#ffffff' || bgColor === '#fff' || bgColor === 'white' || bgColor === 'rgb(255, 255, 255)';
 
                 if (tableComp) {
                     tableComp.addStyle({
@@ -936,16 +957,30 @@ function jsontablecustom(editor) {
                     const cells = tableComp.find('td, th');
                     cells.forEach(cellComp => {
                         const borderValue = borderStyle === 'none' ? 'none' : `${borderWidth}px ${borderStyle} ${borderColorWithOpacity}`;
+                        const cellEl = cellComp.getEl && cellComp.getEl();
+                        const isHighlighted = cellEl && cellEl.getAttribute('data-highlighted') === 'true';
 
-                        cellComp.addStyle({
+                        const styleUpdate = {
                             'border': borderValue,
                             'color': textColor,
                             'font-family': fontFamily,
-                            'background-color': bgColor,
                             'padding': '8px',
                             'vertical-align': verticalAlign,
                             'text-align': textAlign,
-                        });
+                        };
+
+                        if (!isDefaultBg) {
+                            // User explicitly chose a custom background – apply it uniformly.
+                            styleUpdate['background-color'] = bgColor;
+                        } else {
+                            // Default background: remove per-cell background-color so row-level
+                            // alternating colors (and highlights) remain visible.
+                            if (!isHighlighted) {
+                                cellComp.removeStyle('background-color');
+                            }
+                        }
+
+                        cellComp.addStyle(styleUpdate);
 
                         const cellContent = cellComp.find('div')[0] || cellComp.find('.cell-content')[0];
                         if (cellContent) {
@@ -2317,6 +2352,8 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
                 wrapperComponent.components().add(datatableScript);
 
                 setTimeout(() => {
+                    // Re-apply visual theme after DOM/table rebuild so continuation fragments match source styling.
+                    this.applyTableStyles();
                     const conditions = this.getHighlightConditions();
                     const color = this.get('highlight-color');
                     const textColor = this.get('highlight-text-color');
@@ -3059,6 +3096,10 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
             },
 
             enableFormulaEditingOnComponents(tableId) {
+                const attrs = this.getAttributes ? this.getAttributes() : {};
+                const isContinuationTable = attrs['data-continuation-table'] === 'true' || attrs['data-split-table'] === 'continuation';
+                if (isContinuationTable) return;
+
                 document.addEventListener('datatableRedrawn', (e) => {
                     if (e.detail.tableId === tableId) {
                         this.attachFormulaHandlersToComponents(tableId);
@@ -3080,6 +3121,10 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
             },
 
             attachFormulaHandlersToComponents(tableId) {
+                const attrs = this.getAttributes ? this.getAttributes() : {};
+                const isContinuationTable = attrs['data-continuation-table'] === 'true' || attrs['data-split-table'] === 'continuation';
+                if (isContinuationTable) return;
+
                 const canvasDoc = editor.Canvas.getDocument();
                 const canvasWindow = canvasDoc.defaultView;
                 let parser = canvasWindow.globalFormulaParser;
@@ -3359,6 +3404,10 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
             },
 
             reattachAllCellHandlers(tableId) {
+                const attrs = this.getAttributes ? this.getAttributes() : {};
+                const isContinuationTable = attrs['data-continuation-table'] === 'true' || attrs['data-split-table'] === 'continuation';
+                if (isContinuationTable) return;
+
                 const canvasDoc = editor.Canvas.getDocument();
                 const parser = canvasDoc.defaultView.formulaParser ? new canvasDoc.defaultView.formulaParser.Parser() : null;
                 if (!parser) return;
@@ -3541,7 +3590,7 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
                     type: 'default',
                     tagName: 'thead',
                     style: {
-                        'background-color': '#ffff',
+                        'background-color': '#f8f9fa',
                     }
                 });
 
@@ -3550,6 +3599,9 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
                     tagName: 'tr'
                 });
                 const jsonPath = this.get('json-path') || '';
+                const isContinuationTable =
+                    (this.getAttributes && this.getAttributes()['data-continuation-table'] === 'true') ||
+                    (this.getAttributes && this.getAttributes()['data-split-table'] === 'continuation');
                 Object.entries(headers).forEach(([key, header]) => {
                     const headerId = `${tableId}-header-${key}`;
                     const storedHeader = this.get(`header-content-${key}`) || header;
@@ -3568,15 +3620,16 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
                     const headerCellComponent = headerRowComponent.components().add({
                         type: 'json-table-cell',
                         tagName: 'th',
-                        contenteditable: true,
+                        contenteditable: !isContinuationTable,
                         content: storedHeader,
                         selectable: true,
-                        contentEditable: true,
-                        classes: ['json-table-cell', 'cell-content', 'editable-header'],
+                        contentEditable: !isContinuationTable,
+                        classes: ['json-table-cell', 'cell-content', isContinuationTable ? 'readonly-cell' : 'editable-header'],
                         attributes: {
                             id: headerId,
                             'data-column-key': key,
                             'data-gjs-hoverable': 'true',
+                            'contenteditable': isContinuationTable ? 'false' : 'true',
                         },
                         style: {
                             ...cellStyles,
@@ -3595,6 +3648,9 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
                     type: 'default',
                     tagName: 'tbody'
                 });
+                const isContinuationTable =
+                    (this.getAttributes && this.getAttributes()['data-continuation-table'] === 'true') ||
+                    (this.getAttributes && this.getAttributes()['data-split-table'] === 'continuation');
 
                 if (data.length === 0) {
                     const emptyRowComponent = tbodyComponent.components().add({
@@ -3825,12 +3881,13 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
                             type: 'json-table-cell',
                             tagName: 'td',
                             selectable: true,
-                            contenteditable: !isRunningTotal,
+                            contenteditable: !isRunningTotal && !isContinuationTable,
                             content: displayValue,
-                            classes: ['json-table-cell', 'cell-content', isRunningTotal ? 'readonly-cell' : 'editable-cell'],
+                            classes: ['json-table-cell', 'cell-content', (isRunningTotal || isContinuationTable) ? 'readonly-cell' : 'editable-cell'],
                             attributes: {
                                 ...attributes,
-                                'data-gjs-draggable': 'false'
+                                'data-gjs-draggable': 'false',
+                                'contenteditable': (isRunningTotal || isContinuationTable) ? 'false' : 'true'
                             },
                             style: {
                                 ...appliedCellStyles,

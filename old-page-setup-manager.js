@@ -1,4 +1,4 @@
-  class PageSetupManager {
+class PageSetupManager {
   constructor(editor) {
     this.editor = editor;
     this.registerDynamicHeaderFooter();
@@ -2017,276 +2017,27 @@
       continuationTableEl.appendChild(continuationTbody);
       if (continuationTfoot) continuationTableEl.appendChild(continuationTfoot);
       continuationTbody.innerHTML = rowsToMoveHTML.join("");
+      const continuationWrapper = compEl.cloneNode(false);
+      continuationWrapper.innerHTML = "";
       const newTableId = `table-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       continuationTableEl.id = newTableId;
       if (sharedTableId) {
         continuationTableEl.setAttribute("data-source-table-id", sharedTableId);
       }
-      continuationTableEl.setAttribute("data-continuation-table", "true");
-      continuationTableEl.setAttribute(
-        "data-original-table-id",
-        sharedTableId || tableId || "",
-      );
-      continuationTableEl.setAttribute(
-        "data-source-table-id",
-        sharedTableId || tableId || "",
-      );
-      continuationTableEl.setAttribute("data-rows-kept", rowsToKeep);
-      continuationTableEl.setAttribute("data-split-table", "continuation");
-      continuationTableEl.setAttribute(
-        "data-copy-header",
-        copyHeader ? "true" : "false",
-      );
-
-      const nestedJsonTableComponent =
-        (component && component.get && component.get("type") === "json-table"
-          ? component
-          : component && component.find
-            ? component.find("[data-gjs-type='json-table']")[0] ||
-              component.find(".json-table-container")[0]
-            : null) || null;
-
-      const sourceJsonTableComponent = nestedJsonTableComponent || component;
-      const sourceJsonTableAttrs =
-        (sourceJsonTableComponent &&
-          sourceJsonTableComponent.getAttributes &&
-          sourceJsonTableComponent.getAttributes()) ||
-        {};
-      const sourceStateAttr = sourceJsonTableAttrs["data-json-state"];
+      continuationWrapper.appendChild(continuationTableEl);
 
       let modifiedState = null;
-      if (sourceStateAttr) {
+      const originalStateAttr =
+        component.getAttributes && component.getAttributes()["data-json-state"];
+      if (originalStateAttr) {
         try {
-          const stateData = JSON.parse(decodeURIComponent(sourceStateAttr));
+          const stateData = JSON.parse(decodeURIComponent(originalStateAttr));
           if (stateData && Array.isArray(stateData.data)) {
             stateData.data = stateData.data.slice(rowsToKeep);
             stateData.dataRows = stateData.data.length;
-            if (stateData.meta) {
-              stateData.meta.copyHeader = copyHeader;
-              stateData.meta.isContinuation = true;
-            }
             modifiedState = encodeURIComponent(JSON.stringify(stateData));
           }
-        } catch (err) {
-          modifiedState = null;
-        }
-      }
-
-      if (modifiedState) {
-        continuationTableEl.setAttribute("data-json-state", modifiedState);
-      }
-
-      const isLayoutCellElement = (element) => {
-        if (!element || !element.classList) return false;
-        const classNames = Array.from(element.classList);
-        return (
-          element.classList.contains("grid-cell") ||
-          element.classList.contains("col") ||
-          classNames.some((className) => className.startsWith("col-"))
-        );
-      };
-
-      const getLayoutCellElements = (wrapperEl) => {
-        if (!wrapperEl || !wrapperEl.children) return [];
-
-        const directChildren = Array.from(wrapperEl.children);
-        const strictMatches = directChildren.filter((child) =>
-          isLayoutCellElement(child),
-        );
-
-        if (strictMatches.length > 0) {
-          return strictMatches;
-        }
-
-        // Fallback for custom row systems where direct children are logical columns without bootstrap/grid classes.
-        const isRowLikeWrapper =
-          (wrapperEl.classList &&
-            (wrapperEl.classList.contains("row") ||
-              wrapperEl.classList.contains("page-setup-row") ||
-              wrapperEl.classList.contains("page-setup-custom-row") ||
-              wrapperEl.classList.contains("css-grid"))) ||
-          (wrapperEl.getAttribute &&
-            wrapperEl.getAttribute("data-gjs-type") === "css-grid") ||
-          (() => {
-            const display = window.getComputedStyle
-              ? window.getComputedStyle(wrapperEl).display
-              : "";
-            return display === "flex" || display === "grid";
-          })();
-
-        return isRowLikeWrapper ? directChildren : [];
-      };
-
-      const findDirectLayoutCell = (wrapperEl, element) => {
-        if (!wrapperEl || !element) return null;
-
-        let current = element;
-        while (
-          current &&
-          current.parentElement &&
-          current.parentElement !== wrapperEl
-        ) {
-          current = current.parentElement;
-        }
-
-        if (
-          current &&
-          current.parentElement === wrapperEl &&
-          isLayoutCellElement(current)
-        ) {
-          return current;
-        }
-
-        return (
-          element.closest(".grid-cell") ||
-          element.closest("[class*='col-']") ||
-          null
-        );
-      };
-
-      const nestedJsonTableEl =
-        nestedJsonTableComponent && nestedJsonTableComponent.getEl
-          ? nestedJsonTableComponent.getEl()
-          : null;
-
-      const sourceContinuationRootEl =
-        (nestedJsonTableEl &&
-          nestedJsonTableEl.classList &&
-          (nestedJsonTableEl.classList.contains("json-table-container") ||
-            nestedJsonTableEl.getAttribute("data-gjs-type") === "json-table")
-          ? nestedJsonTableEl
-          : (compEl.classList &&
-              (compEl.classList.contains("json-table-container") ||
-                compEl.getAttribute("data-gjs-type") === "json-table")
-            ? compEl
-            : compEl.querySelector &&
-                compEl.querySelector(
-                  '[data-gjs-type="json-table"], .json-table-container',
-                ))) ||
-        null;
-
-      const makeReadonlyContinuationTable = (rootEl) => {
-        const cells = rootEl.querySelectorAll("td, th");
-        cells.forEach((cell) => {
-          cell.setAttribute("contenteditable", "false");
-          cell.setAttribute("data-gjs-editable", "false");
-          cell.classList.remove("editable-cell", "editable-header");
-          cell.classList.add("readonly-cell");
-        });
-      };
-
-      let continuationComponentEl;
-      if (sourceContinuationRootEl) {
-        continuationComponentEl = sourceContinuationRootEl.cloneNode(false);
-        continuationComponentEl.innerHTML = "";
-
-        const sourceInnerWrapper =
-          sourceContinuationRootEl.querySelector &&
-          sourceContinuationRootEl.querySelector(".json-table-wrapper");
-        if (sourceInnerWrapper) {
-          const continuationInnerWrapper = sourceInnerWrapper.cloneNode(false);
-          continuationInnerWrapper.innerHTML = "";
-          continuationInnerWrapper.appendChild(continuationTableEl);
-          continuationComponentEl.appendChild(continuationInnerWrapper);
-        } else {
-          const syntheticWrapper = document.createElement("div");
-          syntheticWrapper.className = "json-table-wrapper";
-          syntheticWrapper.appendChild(continuationTableEl);
-          continuationComponentEl.appendChild(syntheticWrapper);
-        }
-      } else {
-        continuationComponentEl = document.createElement("div");
-        continuationComponentEl.setAttribute("data-gjs-type", "json-table");
-        continuationComponentEl.setAttribute(
-          "class",
-          sourceJsonTableAttrs.class &&
-            sourceJsonTableAttrs.class.includes("json-table-container")
-            ? sourceJsonTableAttrs.class
-            : "json-table-container standard",
-        );
-        continuationComponentEl.setAttribute(
-          "data-i_designer-type",
-          sourceJsonTableAttrs["data-i_designer-type"] || "json-table",
-        );
-        continuationComponentEl.setAttribute(
-          "data-i_designer-highlightable",
-          sourceJsonTableAttrs["data-i_designer-highlightable"] || "true",
-        );
-
-        const syntheticWrapper = document.createElement("div");
-        syntheticWrapper.className = "json-table-wrapper";
-        syntheticWrapper.appendChild(continuationTableEl);
-        continuationComponentEl.appendChild(syntheticWrapper);
-      }
-      continuationComponentEl.setAttribute("data-continuation-table", "true");
-      continuationComponentEl.setAttribute(
-        "data-original-table-id",
-        sharedTableId || tableId || "",
-      );
-      continuationComponentEl.setAttribute(
-        "data-source-table-id",
-        sharedTableId || tableId || "",
-      );
-      continuationComponentEl.setAttribute("data-rows-kept", rowsToKeep);
-      continuationComponentEl.setAttribute("data-split-table", "continuation");
-      continuationComponentEl.setAttribute(
-        "data-copy-header",
-        copyHeader ? "true" : "false",
-      );
-      if (modifiedState) {
-        continuationComponentEl.setAttribute("data-json-state", modifiedState);
-      } else if (
-        continuationComponentEl.getAttribute("data-json-state") == null &&
-        sourceStateAttr
-      ) {
-        continuationComponentEl.setAttribute("data-json-state", sourceStateAttr);
-      }
-      makeReadonlyContinuationTable(continuationComponentEl);
-
-      const gridWrapperEl =
-        this.getNearestGridWrapperComponent(sourceContinuationRootEl || compEl) ||
-        this.getNearestGridWrapperComponent(compEl);
-      let continuationWrapper = continuationComponentEl;
-
-      if (gridWrapperEl) {
-        continuationWrapper = gridWrapperEl.cloneNode(true);
-
-        const originalLayoutCells = getLayoutCellElements(gridWrapperEl);
-        const clonedLayoutCells = getLayoutCellElements(continuationWrapper);
-        const originalLayoutCell = findDirectLayoutCell(
-          gridWrapperEl,
-          sourceContinuationRootEl || compEl,
-        );
-
-        let targetCell = null;
-        if (originalLayoutCell) {
-          const cellIndex = originalLayoutCells.indexOf(originalLayoutCell);
-          if (cellIndex >= 0) {
-            targetCell = clonedLayoutCells[cellIndex] || null;
-          }
-        }
-
-        if (!targetCell && clonedLayoutCells.length > 0) {
-          targetCell = clonedLayoutCells[clonedLayoutCells.length - 1];
-        }
-
-        if (targetCell) {
-          clonedLayoutCells.forEach((cell) => {
-            if (cell !== targetCell) {
-              cell.innerHTML = "";
-            }
-          });
-
-          targetCell.innerHTML = "";
-          targetCell.appendChild(continuationComponentEl);
-          console.debug("[PageSetupManager] continuation wrapper preserved", {
-            layoutCells: clonedLayoutCells.length,
-            targetCellIndex: clonedLayoutCells.indexOf(targetCell),
-          });
-        } else {
-          continuationWrapper.appendChild(continuationComponentEl);
-          console.debug("[PageSetupManager] wrapper clone fallback append used");
-        }
+        } catch (err) {}
       }
 
       const preserveAllSettings = () => {
@@ -2329,10 +2080,7 @@
         ];
 
         allSettings.forEach((key) => {
-          const value =
-            sourceJsonTableComponent && sourceJsonTableComponent.get
-              ? sourceJsonTableComponent.get(key)
-              : component.get(key);
+          const value = component.get(key);
           if (value !== undefined && value !== null) {
             settings[key] = value;
           }
@@ -2341,104 +2089,42 @@
       };
 
       const preservedSettings = preserveAllSettings();
-      const hasGridWrapper = !!gridWrapperEl;
-      const continuationComponentType =
-        sourceJsonTableComponent && sourceJsonTableComponent.get
-          ? sourceJsonTableComponent.get("type") || "json-table"
-          : component.get?.("type") || "json-table";
-
-      const elementToComponentConfig = (element, componentType) => {
-        const attributes = {};
-        Array.from(element.attributes || []).forEach((attr) => {
-          if (attr.name !== "class" && attr.name !== "style") {
-            attributes[attr.name] = attr.value;
-          }
-        });
-
-        const style = {};
-        if (element.style) {
-          for (let i = 0; i < element.style.length; i++) {
-            const prop = element.style[i];
-            const value = element.style.getPropertyValue(prop);
-            if (value) {
-              style[prop] = value;
-            }
-          }
-        }
-
-        const config = {
-          tagName: element.tagName ? element.tagName.toLowerCase() : "div",
-          attributes,
-          classes: Array.from(element.classList || []),
-          style,
-          content: element.innerHTML,
-        };
-
-        if (componentType) {
-          config.type = componentType;
-        }
-
-        return config;
+      const newComponentConfig = {
+        type: (component.get && component.get("type")) || "default",
+        tagName: (component.get && component.get("tagName")) || "div",
+        content: continuationWrapper.outerHTML,
+        attributes: {
+          ...component.getAttributes(),
+          "data-continuation-table": "true",
+          "data-original-table-id": sharedTableId || tableId || "",
+          "data-source-table-id": sharedTableId || tableId || "",
+          "data-rows-kept": rowsToKeep,
+          "data-split-table": "continuation",
+          "data-copy-header": copyHeader ? "true" : "false",
+        },
+        classes: [...(component.getClasses ? component.getClasses() : [])],
+        style: { ...(component.getStyle ? component.getStyle() : {}) },
+        ...preservedSettings,
       };
 
-      const newComponentConfig = elementToComponentConfig(
-        continuationWrapper,
-        continuationComponentType,
-      );
-
-      Object.assign(newComponentConfig, preservedSettings);
       if (modifiedState) {
         newComponentConfig.attributes["data-json-state"] = modifiedState;
       }
 
-      const newComponent = this.editor.Components.addComponent(
-        newComponentConfig,
-      );
+      const newComponent =
+        this.editor.Components.addComponent(newComponentConfig);
 
       setTimeout(() => {
         if (!newComponent) return;
-
-        const tableComponent =
-          newComponent.find("[data-gjs-type='json-table']")[0] ||
-          newComponent.find(".json-table-container")[0] ||
-          newComponent.find("table")[0] ||
-          newComponent;
-
         Object.entries(preservedSettings).forEach(([key, value]) => {
           try {
-            tableComponent.set(key, value);
+            newComponent.set(key, value);
           } catch (e) {}
         });
-
-        if (modifiedState && hasGridWrapper && tableComponent) {
-          try {
-            tableComponent.addAttributes({ "data-json-state": modifiedState });
-          } catch (e) {}
-        }
 
         if (newComponent.view && newComponent.view.render) {
           newComponent.view.render();
         }
-
-        try {
-          tableComponent.set?.({ editable: false });
-          const continuationCellComponents =
-            tableComponent.find && tableComponent.find("td, th");
-          (continuationCellComponents || []).forEach((cellComp) => {
-            cellComp.addAttributes?.({
-              contenteditable: "false",
-              "data-gjs-editable": "false",
-            });
-            cellComp.set?.({ editable: false });
-          });
-
-          const continuationEl =
-            (tableComponent.getEl && tableComponent.getEl()) ||
-            (newComponent.getEl && newComponent.getEl());
-          if (continuationEl) {
-            makeReadonlyContinuationTable(continuationEl);
-          }
-        } catch (e) {}
       }, 250);
 
       if (!copyHeader && newComponent) {
@@ -2766,58 +2452,6 @@
     try {
       const originalFirstComponent = components && components[0];
       const actualComponentsToMove = [];
-      const queuedComponents = new Set();
-
-      // Parse continuation metadata from root or nested nodes so wrapped layouts are handled consistently.
-      const getSplitMeta = (attrs = {}, rootEl = null) => {
-        const nestedSplitNode =
-          rootEl &&
-          rootEl.querySelector &&
-          rootEl.querySelector(
-            '[data-split-table="continuation"], [data-continuation-table="true"]',
-          );
-
-        const isSplitTable =
-          (attrs["data-split-table"] === "continuation" ||
-            attrs["data-continuation-table"] === "true") ||
-          !!nestedSplitNode;
-
-        const copyHeaderAttr =
-          attrs["data-copy-header"] ||
-          (nestedSplitNode && nestedSplitNode.getAttribute("data-copy-header"));
-
-        return {
-          isSplitTable,
-          copyHeaderAttr,
-          nestedSplitNode,
-        };
-      };
-
-      // Continuation tables must remain read-only after relocation.
-      const enforceReadOnlyCells = (rootEl) => {
-        if (!rootEl || !rootEl.querySelectorAll) return;
-        const readOnlyCells = rootEl.querySelectorAll("td, th");
-        readOnlyCells.forEach((cell) => {
-          cell.setAttribute("contenteditable", "false");
-        });
-      };
-
-      const queueComponent = (comp) => {
-        if (!comp || queuedComponents.has(comp)) return;
-        queuedComponents.add(comp);
-        actualComponentsToMove.push(comp);
-      };
-
-      const firstPassQueue = (component) => {
-        if (!component) return;
-        const gridWrapper = this.getNearestGridWrapperComponent(component);
-        if (gridWrapper && gridWrapper !== component) {
-          queueComponent(gridWrapper);
-          return;
-        }
-        queueComponent(component);
-      };
-
       for (const component of components) {
         const isSubreport =
           (typeof component.get === "function" &&
@@ -2841,17 +2475,17 @@
                 }
               } catch (e) {}
 
-              firstPassQueue(child);
+              actualComponentsToMove.push(child);
             });
 
             try {
               component.components().reset();
             } catch (e) {}
           } else {
-            firstPassQueue(component);
+            actualComponentsToMove.push(component);
           }
         } else {
-          firstPassQueue(component);
+          actualComponentsToMove.push(component);
         }
       }
 
@@ -2869,7 +2503,7 @@
       }
 
       let sourceSectionCount = null;
-      const firstComponent = actualComponentsToMove[0] || originalFirstComponent;
+      const firstComponent = originalFirstComponent;
       if (firstComponent) {
         const sourceSection =
           firstComponent.closest &&
@@ -2980,17 +2614,13 @@
 
           if (isTable) {
             const attrs = component.getAttributes && component.getAttributes();
-            const splitMeta = getSplitMeta(attrs || {}, compEl);
-            const isSplitTable = splitMeta.isSplitTable;
-            const copyHeaderAttr = splitMeta.copyHeaderAttr;
-            const shouldRemoveHeader = copyHeaderAttr === "false";
+            const isSplitTable =
+              attrs &&
+              (attrs["data-split-table"] === "continuation" ||
+                attrs["data-continuation-table"] === "true");
 
-            console.debug("[PageSetupManager] moveComponentsToPage table meta", {
-              targetPageIndex,
-              isSplitTable,
-              shouldRemoveHeader,
-              hasNestedSplitNode: !!splitMeta.nestedSplitNode,
-            });
+            const copyHeaderAttr = attrs && attrs["data-copy-header"];
+            const shouldRemoveHeader = copyHeaderAttr === "false";
 
             let dtData = null;
             const tableEl =
@@ -3031,30 +2661,14 @@
               }
             }
 
-            let newComponent = null;
-            if (isSplitTable) {
+            const fullHTML = component.toHTML();
+            component.remove();
+            const newComponent = targetContentArea.append(fullHTML)[0];
+            if (newComponent) {
               try {
-                const clonedComponent = component.clone && component.clone();
-                if (clonedComponent) {
-                  targetContentArea.components().add(clonedComponent, { at: 0 });
-                  newComponent = clonedComponent;
-                  component.remove();
-                }
-              } catch (cloneError) {
-                newComponent = null;
-              }
-            }
-
-            if (!newComponent) {
-              const fullHTML = component.toHTML();
-              component.remove();
-              newComponent = targetContentArea.append(fullHTML)[0];
-              if (newComponent) {
-                try {
-                  targetContentArea.components().remove(newComponent);
-                  targetContentArea.components().add(newComponent, { at: 0 });
-                } catch (e) {}
-              }
+                targetContentArea.components().remove(newComponent);
+                targetContentArea.components().add(newComponent, { at: 0 });
+              } catch (e) {}
             }
             const componentType = component.get && component.get("type");
             const isSubreport = componentType === "subreport";
@@ -3101,104 +2715,56 @@
                 }
               }
 
-              if (isSplitTable) {
-                const splitTableComponent =
-                  (newComponent.find &&
-                    (newComponent.find("[data-gjs-type='json-table']")[0] ||
-                      newComponent.find(".json-table-container")[0])) ||
-                  newComponent;
+              const tdCells = tableEl.querySelectorAll("td, th");
+              tdCells.forEach((cell) => {
+                cell.setAttribute("contenteditable", "true");
+              });
 
-                // Re-assert continuation attributes on moved root to avoid accidental edit-mode reactivation.
+              const cellComponents =
+                newComponent.find && newComponent.find("td, th");
+              (cellComponents || []).forEach((cellComp) => {
                 try {
-                  splitTableComponent.addAttributes({
-                    "data-continuation-table": "true",
-                    "data-split-table": "continuation",
-                  });
+                  cellComp.addAttributes({ contenteditable: "true" });
+                  cellComp.set({ editable: true });
                 } catch (e) {}
+              });
 
-                const splitCellComponents =
-                  splitTableComponent.find && splitTableComponent.find("td, th");
-                (splitCellComponents || []).forEach((cellComp) => {
-                  try {
-                    cellComp.addAttributes({ contenteditable: "false" });
-                    cellComp.set({ editable: false });
-                  } catch (e) {}
-                });
-
-                if (typeof splitTableComponent.set === "function") {
-                  try {
-                    splitTableComponent.set({ editable: false });
-                  } catch (e) {}
+              const pageSetupManager =
+                editor.PageSetupManager || window.pageSetupManager;
+              if (
+                pageSetupManager &&
+                typeof pageSetupManager.reattachAllCellHandlers === "function"
+              ) {
+                const tableId = tableEl.id;
+                if (tableId) {
+                  pageSetupManager.reattachAllCellHandlers(tableId);
                 }
+              }
 
-                if (typeof splitTableComponent.applyTableStyles === "function") {
-                  try {
-                    splitTableComponent.applyTableStyles();
-                  } catch (e) {}
-                }
-
-                enforceReadOnlyCells(newEl);
-
-                console.debug("[PageSetupManager] continuation moved as read-only", {
-                  targetPageIndex,
-                  componentId: splitTableComponent && splitTableComponent.cid,
-                });
-
-                if (newComponent.view && newComponent.view.render) {
-                  newComponent.view.render();
+              if (dtData) {
+                const newTableEl = newEl.querySelector("table") || newEl;
+                if (newTableEl && typeof $ !== "undefined" && $.fn.DataTable) {
+                  $(newTableEl).DataTable({
+                    data: dtData.data,
+                    columns: dtData.columns,
+                    order: dtData.order,
+                    paging: false,
+                    searching: false,
+                    info: false,
+                  });
                 }
               } else {
-                const tdCells = tableEl.querySelectorAll("td, th");
-                tdCells.forEach((cell) => {
-                  cell.setAttribute("contenteditable", "true");
-                });
-
-                const cellComponents =
-                  newComponent.find && newComponent.find("td, th");
-                (cellComponents || []).forEach((cellComp) => {
-                  try {
-                    cellComp.addAttributes({ contenteditable: "true" });
-                    cellComp.set({ editable: true });
-                  } catch (e) {}
-                });
-
-                const pageSetupManager =
-                  editor.PageSetupManager || window.pageSetupManager;
-                if (
-                  pageSetupManager &&
-                  typeof pageSetupManager.reattachAllCellHandlers === "function"
-                ) {
-                  const tableId = tableEl.id;
-                  if (tableId) {
-                    pageSetupManager.reattachAllCellHandlers(tableId);
+                const newTableEl = newEl.querySelector("table") || newEl;
+                if (newTableEl && typeof $ !== "undefined" && $.fn.DataTable) {
+                  if ($.fn.DataTable.isDataTable(newTableEl)) {
+                    $(newTableEl).DataTable().destroy();
                   }
-                }
-
-                if (dtData) {
-                  const newTableEl = newEl.querySelector("table") || newEl;
-                  if (newTableEl && typeof $ !== "undefined" && $.fn.DataTable) {
-                    $(newTableEl).DataTable({
-                      data: dtData.data,
-                      columns: dtData.columns,
-                      order: dtData.order,
-                      paging: false,
-                      searching: false,
-                      info: false,
-                    });
-                  }
-                } else {
-                  const newTableEl = newEl.querySelector("table") || newEl;
-                  if (newTableEl && typeof $ !== "undefined" && $.fn.DataTable) {
-                    if ($.fn.DataTable.isDataTable(newTableEl)) {
-                      $(newTableEl).DataTable().destroy();
-                    }
-                    $(newTableEl).DataTable({
-                      paging: false,
-                      searching: false,
-                      ordering: false,
-                      info: false,
-                    });
-                  }
+                  $(newTableEl).DataTable({
+                    paging: false,
+                    searching: false,
+                    ordering: false,
+                    info: false,
+                  });
                 }
               }
             }, 400);
@@ -3208,28 +2774,22 @@
                 const newTableEl = newComponent.getEl && newComponent.getEl();
                 if (newTableEl) {
                   const allCells = newTableEl.querySelectorAll("td, th");
-                  if (isSplitTable) {
-                    allCells.forEach((cell) => {
-                      cell.setAttribute("contenteditable", "false");
-                    });
-                  } else {
-                    allCells.forEach((cell) => {
-                      if (!cell.hasAttribute("contenteditable")) {
-                        cell.setAttribute("contenteditable", "true");
-                      }
+                  allCells.forEach((cell) => {
+                    if (!cell.hasAttribute("contenteditable")) {
+                      cell.setAttribute("contenteditable", "true");
+                    }
 
-                      const originalCell =
-                        compEl.querySelector &&
-                        compEl.querySelector(`#${cell.id}`);
-                      if (originalCell) {
-                        Array.from(originalCell.attributes).forEach((attr) => {
-                          if (attr.name.startsWith("data-")) {
-                            cell.setAttribute(attr.name, attr.value);
-                          }
-                        });
-                      }
-                    });
-                  }
+                    const originalCell =
+                      compEl.querySelector &&
+                      compEl.querySelector(`#${cell.id}`);
+                    if (originalCell) {
+                      Array.from(originalCell.attributes).forEach((attr) => {
+                        if (attr.name.startsWith("data-")) {
+                          cell.setAttribute(attr.name, attr.value);
+                        }
+                      });
+                    }
+                  });
                 }
               }, 300);
 
@@ -3283,31 +2843,6 @@
                 computedStyles[prop] = value;
               }
             });
-
-            // Preserve actual rendered container width for split/moved table fragments
-            // that may otherwise fall back to auto/percentage sizing outside the original grid cell.
-            if (sourceEl.getBoundingClientRect) {
-              const rect = sourceEl.getBoundingClientRect();
-              if (rect.width > 0) {
-                const widthValue = (computedStyles.width || "").trim();
-                if (
-                  !widthValue ||
-                  widthValue === "auto" ||
-                  widthValue === "0px" ||
-                  widthValue.endsWith("%")
-                ) {
-                  computedStyles.width = `${Math.round(rect.width)}px`;
-                }
-                const maxWidthValue = (computedStyles["max-width"] || "").trim();
-                if (!maxWidthValue || maxWidthValue === "none" || maxWidthValue.endsWith("%")) {
-                  computedStyles["max-width"] = `${Math.round(rect.width)}px`;
-                }
-                const minWidthValue = (computedStyles["min-width"] || "").trim();
-                if (!minWidthValue || minWidthValue === "none" || minWidthValue.endsWith("%")) {
-                  computedStyles["min-width"] = `${Math.round(rect.width)}px`;
-                }
-              }
-            }
           }
 
           const preservedData = {
@@ -3402,88 +2937,6 @@
       console.error("❌ Error in moveComponentsToPage:");
       return false;
     }
-  }
-
-  getNearestGridWrapperComponent(component) {
-    if (!component || typeof component.closest !== "function") return null;
-    const wrapperSelectors = [
-      ".css-grid",
-      "[data-gjs-type='css-grid']",
-      ".page-setup-row",
-      ".page-setup-custom-row",
-      ".row",
-      ".columns",
-      ".flex-row",
-      ".two-column",
-      "[class*='column']",
-    ];
-
-    for (const selector of wrapperSelectors) {
-      const wrapper = component.closest(selector);
-      if (wrapper) return wrapper;
-    }
-
-    const gridCell = component.closest(".grid-cell") ||
-      component.closest("[data-gjs-type='grid-cell']");
-    if (gridCell) {
-      return (
-        gridCell.closest(".css-grid") ||
-        gridCell.closest("[data-gjs-type='css-grid']") ||
-        gridCell.closest(".row") ||
-        gridCell.closest(".page-setup-row") ||
-        gridCell.closest(".page-setup-custom-row")
-      );
-    }
-
-    const bootstrapCell = component.closest("[class*='col-']");
-    if (bootstrapCell) {
-      return (
-        bootstrapCell.closest(".row") ||
-        bootstrapCell.closest(".page-setup-row") ||
-        bootstrapCell.closest(".page-setup-custom-row")
-      );
-    }
-
-    const layoutHeuristic = (el) => {
-      if (!el || !el.children || el.children.length < 2) return false;
-      const style = window.getComputedStyle ? window.getComputedStyle(el) : null;
-      const display = style ? style.display : "";
-      const hasLayoutDisplay = display === "flex" || display === "grid";
-      const classList = el.classList ? Array.from(el.classList) : [];
-      const hasLayoutClass = classList.some((name) =>
-        ["row", "columns", "column", "flex-row", "two-column", "css-grid"].some((token) =>
-          name.includes(token),
-        ),
-      );
-      const isPageShell =
-        classList.includes("page-container") ||
-        classList.includes("page-content") ||
-        classList.includes("main-content-area") ||
-        classList.includes("section-content") ||
-        classList.includes("json-table-wrapper") ||
-        classList.includes("json-table-container");
-      return !isPageShell && (hasLayoutDisplay || hasLayoutClass);
-    };
-
-    let current = component.parentElement;
-    while (current) {
-      if (layoutHeuristic(current)) {
-        return current;
-      }
-
-      if (
-        current.classList &&
-        (current.classList.contains("page-container") ||
-          current.classList.contains("main-content-area") ||
-          current.classList.contains("section-content"))
-      ) {
-        break;
-      }
-
-      current = current.parentElement;
-    }
-
-    return null;
   }
 
   getAccurateComponentHeight(element) {
