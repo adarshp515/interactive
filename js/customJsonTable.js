@@ -65,18 +65,20 @@ function jsontablecustom(editor) {
         }
     });
 
-    function applyHighlighting(tableId, conditions, highlightColor) {
+    function applyHighlighting(tableId, conditions, highlightColor, highlightTextColor, highlightFontFamily, highlightFontSize) {
         try {
             const canvasBody = editor.Canvas.getBody();
             const table = canvasBody.querySelector(`#${tableId}`);
             if (!table) return;
             const wrapper = editor.DomComponents.getWrapper();
-            const prev = table.querySelectorAll('td[data-highlighted="true"], th[data-highlighted="true"]');
+            const prev = table.querySelectorAll('tr[data-highlighted-row="true"], td[data-highlighted="true"], th[data-highlighted="true"]');
             prev.forEach(td => {
                 td.style.backgroundColor = '';
                 td.style.color = '';
                 td.style.fontFamily = '';
+                td.style.fontSize = '';
                 td.removeAttribute('data-highlighted');
+                td.removeAttribute('data-highlighted-row');
 
                 const id = td.id;
                 if (id) {
@@ -85,44 +87,60 @@ function jsontablecustom(editor) {
                         comp.removeStyle('background-color');
                         comp.removeStyle('color');
                         comp.removeStyle('font-family');
+                        comp.removeStyle('font-size');
                     }
                 }
             });
 
             if (conditions && conditions.length > 0) {
-                const bodyCells = table.querySelectorAll('tbody td');
-                bodyCells.forEach(td => {
-                    const div = td.querySelector('div');
-                    const val = div ? div.textContent.trim() : td.textContent.trim();
+                const rows = table.querySelectorAll('tbody tr');
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    let rowShouldHighlight = false;
 
-                    const shouldHighlight = conditions.some(condition =>
-                        evaluateCondition(val, condition)
-                    );
+                    cells.forEach(td => {
+                        const div = td.querySelector('div');
+                        const val = div ? div.textContent.trim() : td.textContent.trim();
 
-                    if (shouldHighlight) {
+                        if (!rowShouldHighlight) {
+                            rowShouldHighlight = conditions.some(condition =>
+                                evaluateCondition(val, condition)
+                            );
+                        }
+                    });
+
+                    if (!rowShouldHighlight) return;
+
+                    row.setAttribute('data-highlighted-row', 'true');
+                    row.style.backgroundColor = highlightColor || '';
+
+                    cells.forEach(td => {
                         td.setAttribute('data-highlighted', 'true');
+                        td.style.backgroundColor = highlightColor || '';
+                        td.style.color = highlightTextColor || '';
+                        td.style.fontFamily = highlightFontFamily || '';
+                        td.style.fontSize = highlightFontSize ? `${highlightFontSize}px` : '';
+                        td.style.boxSizing = 'border-box';
 
                         const id = td.id;
                         if (id) {
                             const comp = wrapper.find(`#${id}`)[0];
                             if (comp) {
-                                const styles = {
-                                    'background-color': bgColor,
+                                comp.addStyle({
+                                    'background-color': highlightColor || '',
+                                    'color': highlightTextColor || '',
+                                    'font-family': highlightFontFamily || '',
+                                    'font-size': highlightFontSize ? `${highlightFontSize}px` : '',
                                     'box-sizing': 'border-box',
-                                };
-                                if (textColor) styles.color = textColor;
-                                if (fontFamily) styles['font-family'] = fontFamily;
-                                if (fontSize) styles['font-size'] = fontSize + 'px';
-
-                                comp.addStyle(styles);
+                                });
                             }
                         }
-                    }
+                    });
                 });
             }
 
         } catch (err) {
-            console.warn('Error applying highlighting:');
+            console.warn('Error applying highlighting:', err);
         }
     }
     function evaluateCondition(cellValue, condition) {
@@ -854,8 +872,11 @@ function jsontablecustom(editor) {
                                     if (tableElement && tableElement.id) {
                                         const conditions = cmp.get('highlight-conditions');
                                         const color = cmp.get('highlight-color');
+                                        const textColor = cmp.get('highlight-text-color');
+                                        const fontFamily = cmp.get('highlight-font-family');
+                                        const fontSize = parseFloat(cmp.get('highlight-font-size')) || 0;
                                         if (conditions && conditions.length > 0) {
-                                            applyHighlighting(tableElement.id, conditions, color);
+                                            applyHighlighting(tableElement.id, conditions, color, textColor, fontFamily, fontSize);
                                         }
                                     }
                                 });
@@ -1445,7 +1466,10 @@ function jsontablecustom(editor) {
                 const tableId = tableElement.id;
                 const conditions = this.getHighlightConditions();
                 const color = this.get('highlight-color');
-                applyHighlighting(tableId, conditions, color);
+                const textColor = this.get('highlight-text-color');
+                const fontFamily = this.get('highlight-font-family');
+                const fontSize = parseFloat(this.get('highlight-font-size')) || 0;
+                applyHighlighting(tableId, conditions, color, textColor, fontFamily, fontSize);
                 editor.trigger('component:update', this);
                 this.updateDataJsonState();
             },
@@ -2295,8 +2319,11 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
                 setTimeout(() => {
                     const conditions = this.getHighlightConditions();
                     const color = this.get('highlight-color');
+                    const textColor = this.get('highlight-text-color');
+                    const fontFamily = this.get('highlight-font-family');
+                    const fontSize = parseFloat(this.get('highlight-font-size')) || 0;
                     if (conditions && conditions.length > 0) {
-                        applyHighlighting(tableId, conditions, color);
+                        applyHighlighting(tableId, conditions, color, textColor, fontFamily, fontSize);
                     } else {
                     }
                     this.enableFormulaEditingOnComponents(tableId);
@@ -4178,12 +4205,14 @@ addCardStyleLayout(wrapperComponent, headers, data, tableId) {
                 const cell = e.target.closest('td, th');
                 if (!cell) return;
 
-                const allCells = this.el.querySelectorAll('td, th');
-                allCells.forEach(c => {
-                    c.className = "";
+                const allSelectedCells = this.el.querySelectorAll('td[data-selected-cell="true"], th[data-selected-cell="true"]');
+                allSelectedCells.forEach(selectedCell => {
+                    selectedCell.removeAttribute('data-selected-cell');
+                    selectedCell.classList.remove('i_designer_selected', 'i_designer-selected');
                 });
 
-                cell.className = "i_designer_selected i_designer-selected";
+                cell.setAttribute('data-selected-cell', 'true');
+                cell.classList.remove('i_designer_selected', 'i_designer-selected');
             },
 
             startCellEditing(cell, cellContent) {

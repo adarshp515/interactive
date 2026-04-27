@@ -552,6 +552,39 @@ function getPdfPreviewHtmlFromLiveCanvas(editor) {
     exportNode.innerHTML = resolveDataBoundExportContent(liveNode) || liveNode.innerHTML;
   });
 
+  ["img", "canvas", "svg"].forEach((selector) => {
+    const liveNodes = liveDoc.body.querySelectorAll(selector);
+    const exportNodes = tempDiv.querySelectorAll(selector);
+    const len = Math.min(liveNodes.length, exportNodes.length);
+
+    for (let i = 0; i < len; i++) {
+      const liveNode = liveNodes[i];
+      const exportNode = exportNodes[i];
+      if (!liveNode || !exportNode) continue;
+
+      if (liveNode.tagName === "IMG") {
+        const liveSrc = liveNode.currentSrc || liveNode.src || liveNode.getAttribute("src");
+        if (liveSrc) {
+          exportNode.setAttribute("src", liveSrc);
+        }
+      }
+
+      const rect = liveNode.getBoundingClientRect ? liveNode.getBoundingClientRect() : null;
+      const width = rect && rect.width ? Math.round(rect.width) : 0;
+      const height = rect && rect.height ? Math.round(rect.height) : 0;
+
+      if (width > 0) {
+        exportNode.style.width = `${width}px`;
+        exportNode.setAttribute("width", String(width));
+      }
+
+      if (height > 0) {
+        exportNode.style.height = `${height}px`;
+        exportNode.setAttribute("height", String(height));
+      }
+    }
+  });
+
   if (typeof window.syncFlowLayoutsFromLiveDoc === "function") {
     window.syncFlowLayoutsFromLiveDoc(tempDiv, liveDoc.body);
   }
@@ -747,6 +780,16 @@ editor.Commands.add("open-modal", {
                   <option value="pdf">PDF</option>
                   <option value="html">HTML</option>
                 </select>
+                <div id="bulk-html-options" style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">
+                  <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                    <input type="checkbox" id="bulk-google-translator">
+                    Add Google Translator
+                  </label>
+                  <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                    <input type="checkbox" id="bulk-text-to-speech">
+                    Add Text-to-Speech
+                  </label>
+                </div>
                 <hr>
                 <!-- File Name Section -->
                 <h5>File Name</h5>
@@ -855,6 +898,26 @@ editor.Commands.add("open-modal", {
 
     const fileNameLanguageDropdown = document.getElementById("file-name-language-dropdown");
     const passwordLanguageDropdown = document.getElementById("password-language-dropdown");
+    const exportTypeDropdown = document.getElementById("export-type-dropdown");
+    const bulkHtmlOptions = document.getElementById("bulk-html-options");
+    const bulkGoogleTranslator = document.getElementById("bulk-google-translator");
+    const bulkTextToSpeech = document.getElementById("bulk-text-to-speech");
+
+    function syncBulkHtmlOnlyOptions() {
+      const isHtmlExport = exportTypeDropdown && exportTypeDropdown.value === "html";
+      if (bulkHtmlOptions) {
+        bulkHtmlOptions.style.display = isHtmlExport ? "flex" : "none";
+      }
+      if (!isHtmlExport) {
+        if (bulkGoogleTranslator) bulkGoogleTranslator.checked = false;
+        if (bulkTextToSpeech) bulkTextToSpeech.checked = false;
+      }
+    }
+
+    if (exportTypeDropdown) {
+      exportTypeDropdown.addEventListener("change", syncBulkHtmlOnlyOptions);
+      syncBulkHtmlOnlyOptions();
+    }
 
     document.getElementById("file-name-mode").addEventListener("change", e => {
       const val = e.target.value;
@@ -1487,6 +1550,8 @@ async function convertXmlToJson(xmlContent, fileName) {
 
 async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindings = []) {
   const exportType = document.getElementById("export-type-dropdown")?.value || "pdf";
+  const addGoogleTranslator = exportType === "html" && Boolean(document.getElementById("bulk-google-translator")?.checked);
+  const addTextToSpeech = exportType === "html" && Boolean(document.getElementById("bulk-text-to-speech")?.checked);
 const apiUrl =
   exportType === "pdf"
     ? `${API_BASE_URL}/uploadPdf`
@@ -1671,6 +1736,395 @@ const apiUrl =
     .map((url) => `<script src="${url}" defer></script>`)
     .join("\n");
 
+  const buildBulkAssistiveRuntime = () => {
+    if (!addGoogleTranslator && !addTextToSpeech) {
+      return { styles: "", bodyStart: "", scripts: "" };
+    }
+
+    const styles = `
+      <style>
+        #bulk-export-tools {
+          position: fixed;
+          top: 10px;
+          right: 10px;
+          z-index: 2147483000;
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+          font-family: Arial, sans-serif;
+        }
+        #bulk_google_translate_element {
+          background: #fff;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          padding: 5px;
+        }
+        #bulk_tts_element {
+          position: relative;
+        }
+        .bulk-tts-toggle {
+          cursor: pointer;
+          padding: 8px 12px;
+          border: 1px solid #0d6efd;
+          border-radius: 4px;
+          background: #0d6efd;
+          color: #fff;
+          font-size: 14px;
+          line-height: 1;
+          user-select: none;
+        }
+        .bulk-tts-toggle.active {
+          background: #198754;
+          border-color: #198754;
+        }
+        .bulk-tts-menu {
+          display: none;
+          position: absolute;
+          top: calc(100% + 5px);
+          right: 0;
+          min-width: 150px;
+          background: #fff;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+          overflow: hidden;
+        }
+        .bulk-tts-menu-item {
+          padding: 10px 12px;
+          cursor: pointer;
+          color: #333;
+          font-size: 13px;
+          white-space: nowrap;
+        }
+        .bulk-tts-menu-item:hover {
+          background: #f5f7fb;
+        }
+      </style>
+    `;
+
+    const bodyStart = `
+      <div id="bulk-export-tools">
+        ${addGoogleTranslator ? '<div id="bulk_google_translate_element"></div>' : ''}
+        ${addTextToSpeech ? '<div id="bulk_tts_element"></div>' : ''}
+      </div>
+    `;
+
+    const translatorScript = addGoogleTranslator
+      ? `
+        <script>
+          function googleTranslateElementInit() {
+            if (!window.google || !google.translate || !document.getElementById('bulk_google_translate_element')) return;
+            new google.translate.TranslateElement({
+              pageLanguage: 'auto',
+              includedLanguages: 'en,hi,mr,ta',
+              layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
+              autoDisplay: false,
+              multilanguagePage: true
+            }, 'bulk_google_translate_element');
+          }
+        </script>
+        <script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+      `
+      : "";
+
+    const ttsScript = addTextToSpeech
+      ? `
+        <script>
+          (function initializeBulkTTS() {
+            var ttsElement = document.getElementById('bulk_tts_element');
+            if (!ttsElement) return;
+
+            ttsElement.innerHTML =
+              '<button type="button" class="bulk-tts-toggle" id="bulkTtsToggle">TTS</button>' +
+              '<div class="bulk-tts-menu" id="bulkTtsMenu">' +
+                '<div class="bulk-tts-menu-item" id="bulkReadAll">Read All Content</div>' +
+                '<div class="bulk-tts-menu-item" id="bulkReadClick">Read on Click</div>' +
+                '<div class="bulk-tts-menu-item" id="bulkStopRead">Stop Reading</div>' +
+              '</div>';
+
+            if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') {
+              ttsElement.style.display = 'none';
+              return;
+            }
+
+            var synth = window.speechSynthesis;
+            var voices = [];
+            var currentUtterance = null;
+            var customReadMode = false;
+            var ttsToggle = document.getElementById('bulkTtsToggle');
+            var ttsMenu = document.getElementById('bulkTtsMenu');
+            var readAllBtn = document.getElementById('bulkReadAll');
+            var readClickBtn = document.getElementById('bulkReadClick');
+            var stopBtn = document.getElementById('bulkStopRead');
+
+            function loadVoices() {
+              voices = synth.getVoices ? synth.getVoices() : [];
+              return voices;
+            }
+
+            function waitForVoices(callback) {
+              loadVoices();
+              if (voices.length) {
+                callback();
+                return;
+              }
+              var done = false;
+              var finish = function () {
+                if (done) return;
+                done = true;
+                loadVoices();
+                callback();
+              };
+              if ('onvoiceschanged' in synth) {
+                synth.onvoiceschanged = finish;
+              }
+              setTimeout(finish, 1200);
+            }
+
+            loadVoices();
+            if ('onvoiceschanged' in synth) {
+              synth.onvoiceschanged = loadVoices;
+            }
+
+            function detectLanguage(text) {
+              var langPatterns = {
+                hi: /[\\u0900-\\u097F]/,
+                ta: /[\\u0B80-\\u0BFF]/,
+                ar: /[\\u0600-\\u06FF\\u0750-\\u077F]/,
+                ru: /[\\u0400-\\u04FF]/,
+                zh: /[\\u4E00-\\u9FFF]/,
+                ja: /[\\u3040-\\u309F\\u30A0-\\u30FF]/,
+                ko: /[\\uAC00-\\uD7AF]/,
+                bn: /[\\u0980-\\u09FF]/,
+                gu: /[\\u0A80-\\u0AFF]/,
+                kn: /[\\u0C80-\\u0CFF]/,
+                ml: /[\\u0D00-\\u0D7F]/,
+                pa: /[\\u0A00-\\u0A7F]/,
+                te: /[\\u0C00-\\u0C7F]/,
+                es: /[áéíóúüñ¿¡ÁÉÍÓÚÜÑ]/,
+                fr: /[àâæçéèêëïîôùûüÿœÀÂÆÇÉÈÊËÏÎÔÙÛÜŸŒ]/,
+                de: /[äöüßÄÖÜ]/,
+                it: /[àèéìíîòóùúÀÈÉÌÍÎÒÓÙÚ]/
+              };
+              for (var lang in langPatterns) {
+                if (langPatterns[lang].test(text)) return lang;
+              }
+              return 'en';
+            }
+
+            function getPreferredLangs(lang) {
+              var langMappings = {
+                hi: ['hi-IN', 'hi'],
+                mr: ['mr-IN', 'mr', 'hi-IN'],
+                ta: ['ta-IN', 'ta'],
+                ar: ['ar-SA', 'ar-EG', 'ar'],
+                zh: ['zh-CN', 'zh-TW', 'zh'],
+                es: ['es-ES', 'es-MX', 'es'],
+                fr: ['fr-FR', 'fr-CA', 'fr'],
+                de: ['de-DE', 'de'],
+                it: ['it-IT', 'it'],
+                en: ['en-US', 'en-GB', 'en']
+              };
+              return langMappings[lang] || [lang, 'en-US', 'en'];
+            }
+
+            function getVoiceForLanguage(lang) {
+              var targetLangs = getPreferredLangs(lang).map(function (item) {
+                return String(item).toLowerCase();
+              });
+              for (var i = 0; i < targetLangs.length; i++) {
+                var exactVoice = voices.find(function (voice) {
+                  return String(voice.lang || '').toLowerCase().indexOf(targetLangs[i]) === 0;
+                });
+                if (exactVoice) return exactVoice;
+              }
+              return voices.find(function (voice) { return voice.default; }) || voices[0] || null;
+            }
+
+            function cleanText(text) {
+              return String(text || '')
+                .replace(/\\s+/g, ' ')
+                .replace(/TTS|Read All Content|Read on Click|Stop Reading/g, '')
+                .trim();
+            }
+
+            function speakText(text, done) {
+              var textToRead = cleanText(text);
+              if (!textToRead) {
+                alert('No content found to read');
+                stopReading();
+                return;
+              }
+
+              waitForVoices(function () {
+                var detectedLang = detectLanguage(textToRead);
+                var voice = getVoiceForLanguage(detectedLang);
+                var preferredLangs = getPreferredLangs(detectedLang);
+
+                if (currentUtterance) synth.cancel();
+
+                currentUtterance = new SpeechSynthesisUtterance(textToRead);
+                if (voice) currentUtterance.voice = voice;
+                currentUtterance.lang = voice && voice.lang ? voice.lang : preferredLangs[0];
+                currentUtterance.rate = 0.85;
+                currentUtterance.pitch = 1;
+                currentUtterance.volume = 1;
+                currentUtterance.onend = done || function () {};
+                currentUtterance.onerror = function () {
+                  if (done) done();
+                };
+                synth.speak(currentUtterance);
+              });
+            }
+
+            function stopReading() {
+              if (currentUtterance) synth.cancel();
+              currentUtterance = null;
+              customReadMode = false;
+              ttsToggle.classList.remove('active');
+              ttsToggle.textContent = 'TTS';
+              ttsMenu.style.display = 'none';
+              document.removeEventListener('click', handleCustomRead, true);
+            }
+
+            function handleCustomRead(event) {
+              if (!customReadMode || event.target.closest('#bulk-export-tools')) return;
+              event.preventDefault();
+              event.stopPropagation();
+
+              var clickedElement = event.target.nodeType === Node.TEXT_NODE ? event.target.parentElement : event.target;
+              var container = clickedElement.closest('p,div,section,article,li,td,th,span,h1,h2,h3,h4,h5,h6') || clickedElement;
+              speakText(container.innerText || container.textContent || '', function () {
+                if (customReadMode) ttsToggle.textContent = 'Click to Read';
+              });
+            }
+
+            ttsToggle.addEventListener('click', function (event) {
+              event.stopPropagation();
+              ttsMenu.style.display = ttsMenu.style.display === 'block' ? 'none' : 'block';
+            });
+
+            document.addEventListener('click', function (event) {
+              if (!ttsElement.contains(event.target)) ttsMenu.style.display = 'none';
+            });
+
+            readAllBtn.addEventListener('click', function () {
+              customReadMode = false;
+              ttsToggle.classList.add('active');
+              ttsToggle.textContent = 'Reading...';
+              ttsMenu.style.display = 'none';
+              speakText(document.body.innerText || document.body.textContent || '', function () {
+                stopReading();
+              });
+            });
+
+            readClickBtn.addEventListener('click', function () {
+              customReadMode = true;
+              ttsToggle.classList.add('active');
+              ttsToggle.textContent = 'Click to Read';
+              ttsMenu.style.display = 'none';
+              document.addEventListener('click', handleCustomRead, true);
+            });
+
+            stopBtn.addEventListener('click', stopReading);
+            window.bulkStopReading = stopReading;
+          })();
+        </script>
+      `
+      : "";
+
+    return {
+      styles,
+      bodyStart,
+      scripts: `${translatorScript}\n${ttsScript}`,
+    };
+  };
+
+  const bulkAssistiveRuntime = buildBulkAssistiveRuntime();
+  const bulkWatermarkJsonResolverScript = `
+    <script>
+      (function resolveJsonWatermarks() {
+        function tokenizePath(pathExpression) {
+          return String(pathExpression || '')
+            .replace(/\\[(\\d+)\\]/g, '.$1')
+            .split('.')
+            .map(function(part) { return part.trim(); })
+            .filter(Boolean);
+        }
+
+        function readValueByPath(input, pathExpression) {
+          var parts = tokenizePath(pathExpression);
+          var current = input;
+          for (var i = 0; i < parts.length; i++) {
+            if (current == null) return undefined;
+            current = current[parts[i]];
+          }
+          return current;
+        }
+
+        function getCurrentJsonObject() {
+          if (window.__BULK_EXPORT_JSON__ && typeof window.__BULK_EXPORT_JSON__ === 'object') {
+            return window.__BULK_EXPORT_JSON__;
+          }
+          if (Array.isArray(window.jsonData1) && window.jsonData1[0]) {
+            return window.jsonData1[0];
+          }
+          try {
+            return JSON.parse(localStorage.getItem('common_json') || '{}');
+          } catch (err) {
+            return {};
+          }
+        }
+
+        function resolveFromAnyLanguage(jsonObject, pathExpression, selectedLanguage) {
+          var directValue = readValueByPath(jsonObject, pathExpression);
+          if (directValue !== undefined && directValue !== null) return directValue;
+
+          var preferredLanguage =
+            selectedLanguage ||
+            localStorage.getItem('custom_language') ||
+            localStorage.getItem('language') ||
+            '';
+          if (preferredLanguage && jsonObject && typeof jsonObject[preferredLanguage] === 'object') {
+            var preferredValue = readValueByPath(jsonObject[preferredLanguage], pathExpression);
+            if (preferredValue !== undefined && preferredValue !== null) return preferredValue;
+          }
+
+          if (jsonObject && typeof jsonObject === 'object') {
+            var keys = Object.keys(jsonObject);
+            for (var i = 0; i < keys.length; i++) {
+              var languageValue = jsonObject[keys[i]];
+              if (!languageValue || typeof languageValue !== 'object') continue;
+              var nestedValue = readValueByPath(languageValue, pathExpression);
+              if (nestedValue !== undefined && nestedValue !== null) return nestedValue;
+            }
+          }
+
+          return undefined;
+        }
+
+        function applyWatermarkValues() {
+          var jsonObject = getCurrentJsonObject();
+          document.querySelectorAll('[data-watermark-json-path]').forEach(function(node) {
+            var pathExpression = node.getAttribute('data-watermark-json-path') || '';
+            var selectedLanguage = node.getAttribute('data-watermark-json-language') || '';
+            var value = resolveFromAnyLanguage(jsonObject, pathExpression, selectedLanguage);
+            if (value === undefined || value === null || String(value).trim() === '') {
+              value = node.getAttribute('data-watermark-static-text') || node.textContent || '';
+            }
+            node.textContent = String(value);
+          });
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', applyWatermarkValues);
+        } else {
+          applyWatermarkValues();
+        }
+      })();
+    </script>
+  `;
+
   if (exportType === "pdf") {
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = html;
@@ -1703,9 +2157,10 @@ const apiUrl =
           <meta charset="utf-8" />
           ${externalStyles}
           ${externalScripts}
+          ${bulkAssistiveRuntime.styles}
           <style>${cleanedCss}</style>
         </head>
-        <body>${tempDiv.innerHTML}</body>
+        <body>${bulkAssistiveRuntime.bodyStart}${tempDiv.innerHTML}${bulkWatermarkJsonResolverScript}${bulkAssistiveRuntime.scripts}</body>
       </html>
     `;
   } else {
@@ -1726,9 +2181,10 @@ const apiUrl =
           <meta charset="utf-8" />
           ${externalStyles}
           ${externalScripts}
+          ${bulkAssistiveRuntime.styles}
           <style>${workingCss}</style>
         </head>
-        <body>${tempDiv.innerHTML}</body>
+        <body>${bulkAssistiveRuntime.bodyStart}${tempDiv.innerHTML}${bulkWatermarkJsonResolverScript}${bulkAssistiveRuntime.scripts}</body>
       </html>
     `;
   }
@@ -1881,7 +2337,7 @@ const apiUrl = `${API_BASE_URL}/uploadHtmlToPdf?file`;
 
   const getCurrentPdfExportSnapshot = () => {
     return {
-      html: getLegacyPdfExportHtmlSnapshot(editor),
+      html: getPdfPreviewHtmlFromLiveCanvas(editor),
     };
   };
 
@@ -2347,10 +2803,141 @@ const apiUrl = `${API_BASE_URL}/uploadHtmlToPdf?file`;
       }
     }
 
+    function neutralizePdfPageBreakCss(cssText) {
+      return String(cssText || "")
+        .replace(/([;{])\s*(?:page-break-before|page-break-after|page-break-inside|break-before|break-after|break-inside)\s*:\s*[^;{}]+;?/gi, "$1")
+        .replace(/(@media\s+print\s*{[\s\S]*?)(\.page-break(?:-element)?\s*\+\s*\*\s*{[\s\S]*?})/gi, "$1")
+        .replace(/(@media\s+print\s*{[\s\S]*?)(\.print-page-break\s*{[\s\S]*?})/gi, "$1");
+    }
+
+    mainCSS = neutralizePdfPageBreakCss(mainCSS);
+
     const tempContainer = document.createElement("div");
     tempContainer.innerHTML = htmlContent;
+
+    const editorChromeSelector = [
+      ".page-container",
+      ".page-content",
+      ".header-wrapper",
+      ".content-wrapper",
+      ".main-content-area",
+      ".footer-wrapper",
+      ".page-header-element",
+      ".page-footer-element",
+    ].join(", ");
+
+    tempContainer.querySelectorAll(editorChromeSelector).forEach((el) => {
+      el.style.border = "none";
+      el.style.borderColor = "transparent";
+      el.style.outline = "none";
+      el.style.boxShadow = "none";
+      el.style.transition = "none";
+    });
+
+    // Remove editor-only page-break marker nodes that can force blank pages in print CSS.
+    const pageBreakSelectors = [
+      ".page-break",
+      ".print-page-break",
+      ".page-break-element",
+      '[class*="page-break"]',
+    ];
+    const breakNodes = tempContainer.querySelectorAll(pageBreakSelectors.join(", "));
+    const removedBreakNodeCount = breakNodes.length;
+    breakNodes.forEach((node) => node.remove());
+
+    // Neutralize inline page-break declarations coming from page setup styles.
+    let normalizedInlineBreakStyles = 0;
+    tempContainer.querySelectorAll("[style]").forEach((el) => {
+      const rawStyle = String(el.getAttribute("style") || "");
+      if (!/(page-break|break-before|break-after|break-inside)/i.test(rawStyle)) return;
+
+      el.style.pageBreakBefore = "auto";
+      el.style.pageBreakAfter = "auto";
+      el.style.pageBreakInside = "auto";
+      el.style.breakBefore = "auto";
+      el.style.breakAfter = "auto";
+      el.style.breakInside = "auto";
+      normalizedInlineBreakStyles++;
+    });
+
+    console.debug("[PDF Export] Removed page-break markers and normalized inline break styles", {
+      removedBreakNodeCount,
+      normalizedInlineBreakStyles,
+    });
+
     const remainingPageContainers = tempContainer.querySelectorAll(".page-container");
-    const idsToClean = Array.from(remainingPageContainers)
+    const chromeNodesToClean = tempContainer.querySelectorAll(editorChromeSelector);
+
+    function readCssPxDimension(id, propertyName) {
+      if (!id) return 0;
+      const escapedId = String(id).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const ruleMatch = mainCSS.match(new RegExp(`#${escapedId}\\s*{([^}]*)}`, "i"));
+      if (!ruleMatch) return 0;
+
+      const propMatch = ruleMatch[1].match(new RegExp(`${propertyName}\\s*:\\s*([0-9.]+)px`, "i"));
+      return propMatch ? parseFloat(propMatch[1]) || 0 : 0;
+    }
+
+    const firstPageForPrint = remainingPageContainers[0];
+    const firstPageWidth = firstPageForPrint
+      ? parseFloat(firstPageForPrint.style.width || firstPageForPrint.getAttribute("width") || "0") ||
+        readCssPxDimension(firstPageForPrint.id, "width")
+      : 0;
+    const firstPageHeight = firstPageForPrint
+      ? parseFloat(firstPageForPrint.style.height || firstPageForPrint.getAttribute("height") || "0") ||
+        readCssPxDimension(firstPageForPrint.id, "height")
+      : 0;
+    const isLandscapePrint = firstPageWidth > 0 && firstPageHeight > 0 && firstPageWidth > firstPageHeight;
+    const printPageSize = isLandscapePrint ? "297mm 210mm" : "210mm 297mm";
+    const printPageWidth = isLandscapePrint ? "296.5mm" : "209.5mm";
+    const printPageHeight = isLandscapePrint ? "209.5mm" : "296.5mm";
+
+    remainingPageContainers.forEach((page, index) => {
+      page.style.width = printPageWidth;
+      page.style.height = printPageHeight;
+      page.style.maxWidth = printPageWidth;
+      page.style.maxHeight = printPageHeight;
+      page.style.minHeight = "0";
+      page.style.margin = "0";
+      page.style.overflow = "hidden";
+      page.style.boxSizing = "border-box";
+      page.style.pageBreakBefore = "auto";
+      page.style.breakBefore = "auto";
+      page.style.pageBreakInside = "auto";
+      page.style.breakInside = "auto";
+
+      if (index < remainingPageContainers.length - 1) {
+        page.style.pageBreakAfter = "always";
+        page.style.breakAfter = "page";
+      } else {
+        page.style.pageBreakAfter = "auto";
+        page.style.breakAfter = "auto";
+      }
+    });
+
+    tempContainer.querySelectorAll(".page-content").forEach((pageContent) => {
+      pageContent.style.width = "100%";
+      pageContent.style.height = "100%";
+      pageContent.style.maxWidth = "100%";
+      pageContent.style.maxHeight = "100%";
+      pageContent.style.minHeight = "0";
+      pageContent.style.overflow = "hidden";
+      pageContent.style.boxSizing = "border-box";
+    });
+
+    tempContainer.querySelectorAll(".content-wrapper").forEach((contentWrapper) => {
+      contentWrapper.style.height = "auto";
+      contentWrapper.style.minHeight = "0";
+      contentWrapper.style.overflow = "hidden";
+    });
+
+    tempContainer.querySelectorAll(".main-content-area").forEach((mainArea) => {
+      mainArea.style.height = "100%";
+      mainArea.style.minHeight = "0";
+      mainArea.style.overflow = "hidden";
+    });
+
+    const idsToClean = Array.from(chromeNodesToClean)
       .filter(el => el.id)
       .map(el => el.id);
 
@@ -2360,15 +2947,131 @@ const apiUrl = `${API_BASE_URL}/uploadHtmlToPdf?file`;
 
       const boxShadowRegex = new RegExp(`(#${id}\\s*{[^}]*?)box-shadow[^;]*;`, "g");
       mainCSS = mainCSS.replace(boxShadowRegex, "$1");
+
+      const borderRegex = new RegExp(`(#${id}\\s*{[^}]*?)(?:border|border-color|border-width|border-style|outline|transition)[^;]*;`, "g");
+      mainCSS = mainCSS.replace(borderRegex, "$1");
     });
 
     const subStyles = Array.isArray(subreportStyles) && subreportStyles.length
       ? subreportStyles.join('\n')
       : '';
 
+    const exportPrintOverride = `<style>
+  @page {
+    size: ${printPageSize};
+    margin: 0;
+  }
+  @media print {
+    html,
+    body {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100% !important;
+      min-height: 0 !important;
+      overflow: visible !important;
+      font-size: 0 !important;
+      line-height: 0 !important;
+    }
+    html body .page-container,
+    html body .page-container[style],
+    html body .page-container:not(:first-child),
+    html body .page-container:not(:last-child),
+    .page-container {
+      page-break-after: auto !important;
+      break-after: auto !important;
+      page-break-before: auto !important;
+      break-before: auto !important;
+      page-break-inside: auto !important;
+      break-inside: auto !important;
+      width: ${printPageWidth} !important;
+      height: ${printPageHeight} !important;
+      max-width: ${printPageWidth} !important;
+      max-height: ${printPageHeight} !important;
+      min-height: 0 !important;
+      margin: 0 !important;
+      border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
+      transition: none !important;
+      overflow: hidden !important;
+      box-sizing: border-box !important;
+      font-size: 16px !important;
+      line-height: normal !important;
+    }
+    html body .page-container:not(:last-child) {
+      page-break-after: always !important;
+      break-after: page !important;
+    }
+    html body .page-content {
+      width: 100% !important;
+      height: 100% !important;
+      max-width: 100% !important;
+      max-height: 100% !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+      box-sizing: border-box !important;
+      border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
+      transition: none !important;
+    }
+    html body .header-wrapper,
+    html body .footer-wrapper,
+    html body .page-header-element,
+    html body .page-footer-element {
+      border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
+      transition: none !important;
+    }
+    html body .content-wrapper {
+      flex: 1 1 auto !important;
+      height: auto !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+      border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
+      transition: none !important;
+    }
+    html body .main-content-area {
+      height: 100% !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+      border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
+      transition: none !important;
+    }
+    html body .page-container:last-child,
+    .page-container:last-child {
+      page-break-after: auto !important;
+      break-after: auto !important;
+    }
+    .page-break,
+    .print-page-break,
+    .page-break-element,
+    [class*="page-break"] {
+      display: none !important;
+      page-break-before: auto !important;
+      break-before: auto !important;
+    }
+    .page-break + *,
+    .print-page-break + *,
+    .page-break-element + *,
+    [class*="page-break"] + * {
+      page-break-before: auto !important;
+      break-before: auto !important;
+      page-break-after: auto !important;
+      break-after: auto !important;
+    }
+  }
+</style>`;
+
     const combinedStyles = `
   <style>${mainCSS}</style>
   ${subStyles}
+  ${exportPrintOverride}
 `;
 
     const parser = new DOMParser();
@@ -2588,7 +3291,19 @@ for (let i = 0; i < pageContainers.length; i++) {
   }
 
   const tableRows = extractTableRows(mainContent);
-  if (tableRows.length > 0) {
+  if (tableRows.length > 1) {
+    if (!skipPageNumber) {
+      applyPageSettings(pageContainer, pageSettings, globalPageNumber);
+      globalPageNumber++;
+    } else {
+      applyPageSettings(pageContainer, pageSettings, null);
+    }
+
+    allNewPages.push(pageContainer.outerHTML);
+    continue;
+  }
+
+  if (tableRows.length === 1) {
     const contentAboveTable = [];
     const contentBelowTable = [];
     const firstTable = mainContent.querySelector('table');
@@ -2597,6 +3312,18 @@ for (let i = 0; i < pageContainers.length; i++) {
       let passedTable = false;
       for (let child of mainContent.children) {
         if (child === tableContainer || (tableContainer && tableContainer.contains(child))) {
+          if (!passedTable && tableContainer && tableContainer !== firstTable) {
+            const tableParent = firstTable.parentElement;
+            if (tableParent && tableParent !== mainContent) {
+              Array.from(tableParent.children).some(function(sibling) {
+                if (sibling === firstTable || sibling.contains(firstTable)) return true;
+                if (!sibling.querySelector || !sibling.querySelector('table')) {
+                  contentAboveTable.push(sibling.cloneNode(true));
+                }
+                return false;
+              });
+            }
+          }
           passedTable = true;
           continue;
         }
@@ -3026,7 +3753,8 @@ function createNewPage(templatePage, headerWrapper, footerWrapper) {
             .page-container { background: white; }
             @media print {
                 body { background: white; }
-                .page-container { margin: 0; box-shadow: none; page-break-after: always; }
+              .page-container { margin: 0; box-shadow: none; page-break-after: auto !important; break-after: auto !important; }
+              .page-container:last-child { page-break-after: auto !important; break-after: auto !important; }
             }
         </style>
         ${styleLinks}
@@ -3052,10 +3780,13 @@ function createNewPage(templatePage, headerWrapper, footerWrapper) {
     const tempContainers = document.createElement("div"); 
     tempContainers.innerHTML = filteredBodyHtml;
     tempContainers.querySelectorAll('.hide-on-print').forEach(el => el.remove());
-    // Hide editor-only page-break markers in the PDF preview content.
-    tempContainers.querySelectorAll('.page-break').forEach((el) => {
-      el.style.setProperty('display', 'none', 'important');
-    });
+    // Remove editor-only page-break marker nodes so sibling page-break rules cannot trigger.
+    const previewBreakNodes = tempContainers.querySelectorAll(
+      '.page-break, .print-page-break, .page-break-element, [class*="page-break"]'
+    );
+    const removedPreviewBreakNodes = previewBreakNodes.length;
+    previewBreakNodes.forEach((el) => el.remove());
+    console.debug("[PDF Preview] Removed page-break marker nodes", { removedPreviewBreakNodes });
   // End Remove hide on print
     // const finalHtml = buildFinalHtml(filteredBodyHtml, subreportStyles);
      const finalHtml = buildFinalHtml(tempContainers.innerHTML, subreportStyles);
@@ -3278,9 +4009,12 @@ function createNewPage(templatePage, headerWrapper, footerWrapper) {
       elementsToRemove.forEach(el => el.remove());
 
       // Ensure editor-only page-break markers don't render in the generated PDF.
-      tempContainer.querySelectorAll('.page-break').forEach((el) => {
-        el.style.setProperty('display', 'none', 'important');
-      });
+      const exportBreakNodes = tempContainer.querySelectorAll(
+        '.page-break, .print-page-break, .page-break-element, [class*="page-break"]'
+      );
+      const removedExportBreakNodes = exportBreakNodes.length;
+      exportBreakNodes.forEach((el) => el.remove());
+      console.debug("[PDF Generate] Removed page-break marker nodes", { removedExportBreakNodes });
 
       // Convert live chart runtime output to static images before building export HTML.
       // This makes charts visible in downloaded HTML and API-generated PDF without JS execution.
@@ -4487,4 +5221,3 @@ window.addEventListener('beforeunload', function (e) {
     e.returnValue = '';
   }
 });
-

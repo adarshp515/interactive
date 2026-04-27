@@ -244,8 +244,36 @@
               label: "Text section",
               media:
                 '<svg viewBox="0 0 24 24">\n        <path fill="currentColor" d="M21,6V8H3V6H21M3,18H12V16H3V18M3,13H21V11H3V13Z" />\n    </svg>',
-              content:
-                '<section class="bdg-sect">\n      <h1 class="heading">Insert title here</h1>\n      <p class="paragraph">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua</p>\n      </section>',
+              content: {
+                type: "default",
+                tagName: "section",
+                attributes: {
+                  class: "bdg-sect",
+                },
+                components: [
+                  {
+                    type: "formatted-rich-text",
+                    tagName: "h1",
+                    content: "Insert title here",
+                    attributes: {
+                      class: "heading",
+                      "data-i_designer-type": "text",
+                      "data-i_designer-highlightable": "true",
+                    },
+                  },
+                  {
+                    type: "formatted-rich-text",
+                    tagName: "p",
+                    content:
+                      "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua",
+                    attributes: {
+                      class: "paragraph",
+                      "data-i_designer-type": "text",
+                      "data-i_designer-highlightable": "true",
+                    },
+                  },
+                ],
+              },
             });
         })(e, c),
           l(e, c),

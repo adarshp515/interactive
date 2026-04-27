@@ -5805,6 +5805,9 @@ padding: 8px;
     const watermarkText = watermarkSettings.text || {};
     const watermarkImage = watermarkSettings.image || {};
     const watermarkTextContent = watermarkText.content || "CONFIDENTIAL";
+    const watermarkTextSource = watermarkText.source || "static";
+    const watermarkTextJsonPath = watermarkText.jsonPath || "";
+    const watermarkTextJsonLanguage = watermarkText.jsonLanguage || "";
     const watermarkFontSize = watermarkText.fontSize || 48;
     const watermarkColor = watermarkText.color || "#000000";
     const watermarkOpacity = Math.round((watermarkText.opacity || 0.3) * 100);
@@ -5960,6 +5963,36 @@ padding: 8px;
           value="${watermarkTextContent}"
           placeholder="Enter watermark text"
         >
+      </div>
+
+      <div class="page-setup-row">
+        <label class="page-setup-label">Text Source:</label>
+        <select id="settingsWatermarkTextSource" class="page-setup-control">
+          <option value="static" ${watermarkTextSource !== "json" ? "selected" : ""}>Static Text</option>
+          <option value="json" ${watermarkTextSource === "json" ? "selected" : ""}>JSON Key</option>
+        </select>
+      </div>
+
+      <div id="settingsWatermarkJsonSection" style="display: ${watermarkTextSource === "json" ? "block" : "none"};">
+        <div class="page-setup-row">
+          <label class="page-setup-label">JSON Key:</label>
+          <div style="display:flex; gap:8px; align-items:center; flex:1;">
+            <input
+              type="text"
+              id="settingsWatermarkJsonPath"
+              class="page-setup-control"
+              value="${watermarkTextJsonPath}"
+              placeholder="Select JSON key"
+              readonly
+            >
+            <input
+              type="hidden"
+              id="settingsWatermarkJsonLanguage"
+              value="${watermarkTextJsonLanguage}"
+            >
+            <button type="button" id="settingsWatermarkJsonPick" class="page-setup-btn page-setup-btn-secondary">Choose</button>
+          </div>
+        </div>
       </div>
 
       <div class="size-controls">
@@ -7084,6 +7117,36 @@ padding: 8px;
           this.pageSettings.watermark.text = {};
         }
         this.pageSettings.watermark.text.content = e.target.value;
+      });
+    }
+
+    const watermarkTextSourceInput = document.getElementById(
+      "settingsWatermarkTextSource",
+    );
+    const watermarkJsonSection = document.getElementById(
+      "settingsWatermarkJsonSection",
+    );
+    if (watermarkTextSourceInput) {
+      watermarkTextSourceInput.addEventListener("change", (e) => {
+        if (!this.pageSettings.watermark) {
+          this.pageSettings.watermark = {};
+        }
+        if (!this.pageSettings.watermark.text) {
+          this.pageSettings.watermark.text = {};
+        }
+        this.pageSettings.watermark.text.source = e.target.value;
+        if (watermarkJsonSection) {
+          watermarkJsonSection.style.display = e.target.value === "json" ? "block" : "none";
+        }
+      });
+    }
+
+    const watermarkJsonPickButton = document.getElementById(
+      "settingsWatermarkJsonPick",
+    );
+    if (watermarkJsonPickButton) {
+      watermarkJsonPickButton.addEventListener("click", () => {
+        this.openWatermarkJsonPicker();
       });
     }
 
@@ -8390,6 +8453,13 @@ padding: 8px;
       const watermarkTextContent =
         document.getElementById("settingsWatermarkText")?.value ||
         "CONFIDENTIAL";
+      const watermarkTextSource =
+        document.getElementById("settingsWatermarkTextSource")?.value ||
+        "static";
+      const watermarkTextJsonPath =
+        document.getElementById("settingsWatermarkJsonPath")?.value || "";
+      const watermarkTextJsonLanguage =
+        document.getElementById("settingsWatermarkJsonLanguage")?.value || "";
       const watermarkFontSize =
         parseInt(document.getElementById("settingsWatermarkFontSize")?.value) ||
         36;
@@ -8506,6 +8576,9 @@ padding: 8px;
         imagePosition: watermarkImagePosition,
         text: {
           content: watermarkTextContent,
+          source: watermarkTextSource,
+          jsonPath: watermarkTextJsonPath,
+          jsonLanguage: watermarkTextJsonLanguage,
           fontSize: watermarkFontSize,
           color: watermarkColor,
           opacity: watermarkOpacity,
@@ -10518,6 +10591,21 @@ padding: 8px;
 
     let watermarkContent = "";
     let positionStyles = "";
+    const escapeHtml = (value) =>
+      String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    const textWatermarkValue = watermark.text?.content || "CONFIDENTIAL";
+    const textWatermarkJsonPath =
+      watermark.text?.source === "json" ? watermark.text?.jsonPath || "" : "";
+    const textWatermarkJsonLanguage =
+      watermark.text?.source === "json" ? watermark.text?.jsonLanguage || "" : "";
+    const textWatermarkDataAttrs = textWatermarkJsonPath
+      ? ` data-watermark-json-path="${escapeHtml(textWatermarkJsonPath)}" data-watermark-json-language="${escapeHtml(textWatermarkJsonLanguage)}" data-watermark-static-text="${escapeHtml(textWatermarkValue)}"`
+      : "";
 
     const getAbsolutePosition = (position) => {
       switch (position) {
@@ -10549,7 +10637,7 @@ padding: 8px;
       let tileContent = "";
       if (watermark.type === "text" || watermark.type === "both") {
         tileContent += `
-        <div class="page-watermark-text-tile" style="
+        <div class="page-watermark-text-tile"${textWatermarkDataAttrs} style="
           font-family: ${watermark.text.font || "Arial"}, sans-serif !important;
           font-size: ${watermark.text.fontSize}px !important;
           color: ${watermark.text.color} !important;
@@ -10562,7 +10650,7 @@ padding: 8px;
           display: flex !important;
           align-items: center !important;
           justify-content: center !important;
-        ">${watermark.text.content}</div>
+        ">${escapeHtml(textWatermarkValue)}</div>
       `;
       }
 
@@ -10640,7 +10728,7 @@ padding: 8px;
         const absTextPos = getAbsolutePosition(textPosition);
 
         const textWatermarkContent = `
-        <div class="page-watermark-text" style="
+        <div class="page-watermark-text"${textWatermarkDataAttrs} style="
           font-family: ${watermark.text.font || "Arial"}, sans-serif !important;
           font-size: ${watermark.text.fontSize}px !important;
           color: ${watermark.text.color} !important;
@@ -10650,7 +10738,7 @@ padding: 8px;
           white-space: nowrap !important;
           user-select: none !important;
           pointer-events: none !important;
-        ">${watermark.text.content}</div>
+        ">${escapeHtml(textWatermarkValue)}</div>
       `;
 
         const textWatermarkGjsComponent = pageContentComponent.append(`
@@ -12227,6 +12315,199 @@ padding: 8px;
     });
   }
 
+  openWatermarkJsonPicker() {
+    let commonJson = null;
+    try {
+      commonJson = JSON.parse(localStorage.getItem("common_json") || "{}");
+    } catch (err) {
+      commonJson = {};
+    }
+
+    if (!commonJson || typeof commonJson !== "object" || !Object.keys(commonJson).length) {
+      alert("No JSON keys found. Please upload/select JSON data first.");
+      return;
+    }
+
+    const escapeHtml = (value) =>
+      String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+    const existingOverlay = document.getElementById("watermark-json-picker-overlay");
+    if (existingOverlay) existingOverlay.remove();
+
+    const languageKeys = Object.keys(commonJson).filter((key) => {
+      const value = commonJson[key];
+      return value && typeof value === "object";
+    });
+    const fallbackLanguage = Object.keys(commonJson)[0] || "";
+    const initialLanguage =
+      localStorage.getItem("custom_language") ||
+      localStorage.getItem("language") ||
+      languageKeys[0] ||
+      fallbackLanguage;
+    const hasLanguageRoots = languageKeys.length > 0;
+
+    const overlay = document.createElement("div");
+    overlay.id = "watermark-json-picker-overlay";
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.35);
+      z-index: 2147483647;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    `;
+
+    overlay.innerHTML = `
+      <div style="width:420px; max-width:95vw; background:#fff; color:#222; border-radius:6px; box-shadow:0 14px 40px rgba(0,0,0,0.25); overflow:hidden;">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid #e5e5e5;">
+          <strong>Select Watermark JSON Key</strong>
+          <button type="button" id="watermarkJsonPickerClose" style="border:0; background:transparent; font-size:20px; line-height:1; cursor:pointer;">&times;</button>
+        </div>
+        <div style="padding:14px; display:flex; flex-direction:column; gap:12px;">
+          <label style="display:flex; flex-direction:column; gap:5px;">
+            <span style="font-size:13px; font-weight:600;">Select Language</span>
+            <select id="watermarkJsonLanguage" class="page-setup-control"></select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:5px;">
+            <span style="font-size:13px; font-weight:600;">Select JSON Key</span>
+            <select id="watermarkJsonKey" class="page-setup-control"></select>
+          </label>
+          <input type="text" id="watermarkJsonSearchInput" class="page-setup-control" placeholder="Search key">
+          <div id="watermarkJsonPreview" style="min-height:34px; padding:8px; background:#f7f7f7; border:1px solid #eee; border-radius:4px; font-size:12px; color:#555;"></div>
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:8px; padding:12px 14px; border-top:1px solid #e5e5e5;">
+          <button type="button" id="watermarkJsonPickerCancel" class="page-setup-btn page-setup-btn-secondary">Cancel</button>
+          <button type="button" id="watermarkJsonPickerApply" class="page-setup-btn page-setup-btn-primary">Add</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const languageSelect = overlay.querySelector("#watermarkJsonLanguage");
+    const keySelect = overlay.querySelector("#watermarkJsonKey");
+    const searchInput = overlay.querySelector("#watermarkJsonSearchInput");
+    const preview = overlay.querySelector("#watermarkJsonPreview");
+    const closeOverlay = () => overlay.remove();
+
+    const languageOptions = hasLanguageRoots ? languageKeys : [fallbackLanguage];
+    languageSelect.innerHTML = languageOptions
+      .map((language) => {
+        const selected = language === initialLanguage ? "selected" : "";
+        return `<option value="${escapeHtml(language)}" ${selected}>${escapeHtml(language)}</option>`;
+      })
+      .join("");
+
+    const getLanguageRoot = () => {
+      const selectedLanguage = languageSelect.value;
+      if (hasLanguageRoots && commonJson[selectedLanguage]) {
+        return commonJson[selectedLanguage];
+      }
+      return commonJson;
+    };
+
+    const getNestedValueForPreview = (root, path) => {
+      const normalizedPath = String(path || "").replace(/\[(\d+)\]/g, ".$1");
+      const parts = normalizedPath.split(".").map((part) => part.trim()).filter(Boolean);
+      let current = root;
+      for (const part of parts) {
+        if (current == null) return undefined;
+        current = current[part];
+      }
+      return current;
+    };
+
+    const renderKeyOptions = () => {
+      const root = getLanguageRoot();
+      const filter = String(searchInput.value || "").toLowerCase();
+      const keys = this.extractMetaDataKeys(root).filter((key) =>
+        key.toLowerCase().includes(filter),
+      );
+
+      keySelect.innerHTML = keys.length
+        ? keys.map((key) => `<option value="${escapeHtml(key)}">${escapeHtml(key)}</option>`).join("")
+        : '<option value="">No keys found</option>';
+
+      updatePreview();
+    };
+
+    const updatePreview = () => {
+      const selectedKey = keySelect.value;
+      const value = selectedKey ? getNestedValueForPreview(getLanguageRoot(), selectedKey) : "";
+      const previewValue =
+        value && typeof value === "object"
+          ? JSON.stringify(value).slice(0, 140)
+          : String(value == null ? "" : value).slice(0, 140);
+      preview.textContent = selectedKey
+        ? `Selected: ${selectedKey}${previewValue ? ` | Preview: ${previewValue}` : ""}`
+        : "Select a key";
+    };
+
+    languageSelect.addEventListener("change", renderKeyOptions);
+    searchInput.addEventListener("input", renderKeyOptions);
+    keySelect.addEventListener("change", updatePreview);
+
+    overlay.querySelector("#watermarkJsonPickerClose").addEventListener("click", closeOverlay);
+    overlay.querySelector("#watermarkJsonPickerCancel").addEventListener("click", closeOverlay);
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) closeOverlay();
+    });
+
+    overlay.querySelector("#watermarkJsonPickerApply").addEventListener("click", () => {
+      const selectedKey = keySelect.value;
+      if (!selectedKey) return;
+
+      const inputField = document.getElementById("settingsWatermarkJsonPath");
+      if (inputField) {
+        inputField.value = selectedKey;
+      }
+
+      const languageField = document.getElementById("settingsWatermarkJsonLanguage");
+      if (languageField) {
+        languageField.value = languageSelect.value;
+      }
+
+      const textSourceInput = document.getElementById("settingsWatermarkTextSource");
+      if (textSourceInput) {
+        textSourceInput.value = "json";
+      }
+
+      const selectedValue = getNestedValueForPreview(getLanguageRoot(), selectedKey);
+      const resolvedWatermarkText =
+        selectedValue && typeof selectedValue === "object"
+          ? JSON.stringify(selectedValue)
+          : String(selectedValue == null ? "" : selectedValue);
+
+      const textInput = document.getElementById("settingsWatermarkText");
+      if (textInput && resolvedWatermarkText) {
+        textInput.value = resolvedWatermarkText;
+        textInput.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+
+      this.pageSettings.watermark = this.pageSettings.watermark || {};
+      this.pageSettings.watermark.text = this.pageSettings.watermark.text || {};
+      this.pageSettings.watermark.text.source = "json";
+      this.pageSettings.watermark.text.jsonPath = selectedKey;
+      this.pageSettings.watermark.text.jsonLanguage = languageSelect.value;
+      if (resolvedWatermarkText) {
+        this.pageSettings.watermark.text.content = resolvedWatermarkText;
+      }
+
+      this.updateAllPageVisuals && this.updateAllPageVisuals();
+
+      closeOverlay();
+    });
+
+    renderKeyOptions();
+  }
+
   initializeArrayDataListener() {
     document.addEventListener("arrayDataSelected", (event) => {
       const { data, jsonPath } = event.detail;
@@ -12328,9 +12609,25 @@ padding: 8px;
     }
   }
 
-  extractMetaDataKeys(jsonObj) {
+  extractMetaDataKeys(jsonObj, prefix = "") {
     if (!jsonObj || typeof jsonObj !== "object") return [];
-    return Object.keys(jsonObj);
+
+    let keys = [];
+    Object.keys(jsonObj).forEach((key) => {
+      const value = jsonObj[key];
+      const nextKey = Array.isArray(jsonObj)
+        ? `${prefix}[${key}]`
+        : prefix
+          ? `${prefix}.${key}`
+          : key;
+      keys.push(nextKey);
+
+      if (value && typeof value === "object") {
+        keys = keys.concat(this.extractMetaDataKeys(value, nextKey));
+      }
+    });
+
+    return keys;
   }
 
   getNestedValue(obj, path) {

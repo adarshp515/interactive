@@ -52,6 +52,50 @@ function exportPlugin(editor) {
       }
     });
 
+    // Freeze visual node dimensions from the live canvas so resized media keeps its export aspect ratio.
+    let syncedVisualDimensions = 0;
+    ["img", "canvas", "svg"].forEach((selector) => {
+      const liveNodes = liveDoc.body.querySelectorAll(selector);
+      const exportNodes = tempDiv.querySelectorAll(selector);
+      const len = Math.min(liveNodes.length, exportNodes.length);
+
+      for (let i = 0; i < len; i++) {
+        const liveNode = liveNodes[i];
+        const exportNode = exportNodes[i];
+        if (!liveNode || !exportNode) continue;
+
+        const rect = liveNode.getBoundingClientRect ? liveNode.getBoundingClientRect() : null;
+        const width = rect && rect.width ? Math.round(rect.width) : 0;
+        const height = rect && rect.height ? Math.round(rect.height) : 0;
+
+        if (width > 0) {
+          exportNode.style.width = `${width}px`;
+          exportNode.setAttribute("width", String(width));
+        }
+
+        if (height > 0) {
+          exportNode.style.height = `${height}px`;
+          exportNode.setAttribute("height", String(height));
+        }
+
+        try {
+          const computed = liveDoc.defaultView && liveDoc.defaultView.getComputedStyle
+            ? liveDoc.defaultView.getComputedStyle(liveNode)
+            : null;
+          if (computed && computed.objectFit && computed.objectFit !== "fill") {
+            exportNode.style.objectFit = computed.objectFit;
+          }
+        } catch (styleErr) {
+          // Ignore computed-style access issues for detached nodes.
+        }
+
+        if (width > 0 || height > 0) {
+          syncedVisualDimensions++;
+        }
+      }
+    });
+    console.debug("[Export] Synced visual node dimensions from live canvas", { syncedVisualDimensions });
+
     const exportNodesById = new Map();
     tempDiv.querySelectorAll("[id]").forEach((node) => {
       if (node.id) {
@@ -230,45 +274,63 @@ function exportPlugin(editor) {
 
   function replaceVisualNodeWithImage(node, dataUrl, size) {
     if (!node || !dataUrl) return;
-    const maxWidth = 620;
-    let finalWidth = size && size.width ? size.width : maxWidth;
-    let finalHeight = size && size.height ? size.height : 0;
+    let finalWidth = size && size.width ? size.width : parseFloat(node.style.width) || 0;
+    let finalHeight = size && size.height ? size.height : parseFloat(node.style.height) || 0;
 
-    if (finalWidth > maxWidth) {
-      if (finalHeight) {
-        finalHeight = Math.round((finalHeight * maxWidth) / finalWidth);
-      }
-      finalWidth = maxWidth;
+    if (!finalWidth && node.getAttribute && node.getAttribute("width")) {
+      finalWidth = parseFloat(node.getAttribute("width")) || 0;
     }
+    if (!finalHeight && node.getAttribute && node.getAttribute("height")) {
+      finalHeight = parseFloat(node.getAttribute("height")) || 0;
+    }
+
+    finalWidth = finalWidth > 0 ? Math.round(finalWidth) : 0;
+    finalHeight = finalHeight > 0 ? Math.round(finalHeight) : 0;
 
     if ((node.tagName || "").toUpperCase() === "IMG") {
       node.setAttribute("src", dataUrl);
-      node.style.width = `${Math.max(80, Math.round(finalWidth))}px`;
-      node.style.maxWidth = "100%";
-      node.style.height = finalHeight ? `${Math.max(40, Math.round(finalHeight))}px` : "auto";
-      node.style.objectFit = "contain";
+      if (finalWidth > 0) {
+        node.style.width = `${finalWidth}px`;
+        node.setAttribute("width", String(finalWidth));
+      }
+      if (finalHeight > 0) {
+        node.style.height = `${finalHeight}px`;
+        node.setAttribute("height", String(finalHeight));
+      } else {
+        node.style.height = "auto";
+      }
       return;
     }
 
     const img = document.createElement("img");
     img.src = dataUrl;
     img.style.display = "block";
-    img.style.maxWidth = "100%";
-    img.style.width = `${Math.max(80, Math.round(finalWidth))}px`;
-    img.style.height = finalHeight ? `${Math.max(40, Math.round(finalHeight))}px` : "auto";
-    img.style.objectFit = "contain";
+    if (finalWidth > 0) {
+      img.style.width = `${finalWidth}px`;
+      img.setAttribute("width", String(finalWidth));
+    }
+    if (finalHeight > 0) {
+      img.style.height = `${finalHeight}px`;
+      img.setAttribute("height", String(finalHeight));
+    } else {
+      img.style.height = "auto";
+    }
     if (node.id) img.id = node.id;
+    if (node.className) img.className = node.className;
     node.parentNode && node.parentNode.replaceChild(img, node);
   }
 
   async function inlineVisualNodes(container, editor) {
     const visualNodes = Array.from(container.querySelectorAll("img, canvas, svg"));
+    let replacedVisualNodes = 0;
     for (const node of visualNodes) {
       if ((node.tagName || "").toUpperCase() === "SVG" && node.closest("defs")) continue;
       const visual = await getVisualNodeData(node, editor);
       if (!visual.dataUrl) continue;
       replaceVisualNodeWithImage(node, visual.dataUrl, visual);
+      replacedVisualNodes++;
     }
+    console.debug("[Export] Inlined visual nodes", { replacedVisualNodes });
     return container;
   }
 
@@ -331,30 +393,40 @@ function exportPlugin(editor) {
       const width =
         parseFloat(el.style.width) ||
         parseFloat(el.getAttribute('width')) ||
-        el.width ||
         0;
       const height =
         parseFloat(el.style.height) ||
         parseFloat(el.getAttribute('height')) ||
-        el.height ||
         0;
-      const maxWidth = 620;
-      let finalWidth = width || maxWidth;
-      let finalHeight = height || 0;
 
-      if (finalWidth > maxWidth) {
-        if (finalHeight) {
-          finalHeight = Math.round((finalHeight * maxWidth) / finalWidth);
-        }
-        finalWidth = maxWidth;
+      const naturalWidth = el.naturalWidth || el.width || 0;
+      const naturalHeight = el.naturalHeight || el.height || 0;
+
+      let finalWidth = width;
+      let finalHeight = height;
+
+      if (!finalWidth && finalHeight && naturalWidth && naturalHeight) {
+        finalWidth = Math.round((finalHeight * naturalWidth) / Math.max(1, naturalHeight));
+      }
+      if (!finalHeight && finalWidth && naturalWidth && naturalHeight) {
+        finalHeight = Math.round((finalWidth * naturalHeight) / Math.max(1, naturalWidth));
       }
 
-      el.style.width = `${Math.max(80, Math.round(finalWidth))}px`;
+      if (finalWidth > 0) {
+        const roundedWidth = Math.round(finalWidth);
+        el.style.width = `${roundedWidth}px`;
+        el.setAttribute('width', String(roundedWidth));
+      }
+
+      if (finalHeight > 0) {
+        const roundedHeight = Math.round(finalHeight);
+        el.style.height = `${roundedHeight}px`;
+        el.setAttribute('height', String(roundedHeight));
+      } else {
+        el.style.height = 'auto';
+      }
+
       el.style.maxWidth = '100%';
-      el.style.height = finalHeight ? `${Math.max(40, Math.round(finalHeight))}px` : 'auto';
-      el.style.objectFit = 'contain';
-      el.removeAttribute('width');
-      el.removeAttribute('height');
     });
 
     container.querySelectorAll('table').forEach((el) => {
@@ -433,8 +505,6 @@ function exportPlugin(editor) {
       }
       img {
         display: block !important;
-        height: auto !important;
-        width: auto !important;
         max-width: ${imageMaxWidthPt}pt !important;
         margin: 8pt 0 !important;
       }
@@ -491,6 +561,8 @@ function exportPlugin(editor) {
   async function prepareWordExportContainer(editor) {
     const tempDiv = await prepareRichExportContainer(editor);
 
+    let preparedWordImages = 0;
+
     tempDiv.querySelectorAll('img').forEach((el) => {
       const width =
         parseFloat(el.style.width) ||
@@ -502,22 +574,45 @@ function exportPlugin(editor) {
         parseFloat(el.getAttribute('height')) ||
         el.height ||
         0;
-      const clampedWidthPx = Math.min(Math.max(width || 420, 160), 500);
+
+      const naturalWidth = el.naturalWidth || width || 420;
+      const naturalHeight = el.naturalHeight || height || 0;
+
+      let finalWidthPx = width || 0;
+      let finalHeightPx = height || 0;
+
+      if (!finalWidthPx && finalHeightPx && naturalWidth && naturalHeight) {
+        finalWidthPx = Math.round((finalHeightPx * naturalWidth) / Math.max(1, naturalHeight));
+      }
+      if (!finalHeightPx && finalWidthPx && naturalWidth && naturalHeight) {
+        finalHeightPx = Math.round((finalWidthPx * naturalHeight) / Math.max(1, naturalWidth));
+      }
+      if (!finalWidthPx) {
+        finalWidthPx = naturalWidth || 420;
+      }
+
+      // Keep dimensions predictable for Word while preserving the edited aspect ratio.
+      const clampedWidthPx = Math.min(Math.max(finalWidthPx, 1), 1200);
       const widthPt = Math.round(clampedWidthPx * 0.75);
-      const heightPt = height
-        ? Math.round((height * widthPt) / Math.max(1, width || clampedWidthPx))
+      const heightPt = finalHeightPx
+        ? Math.round(finalHeightPx * 0.75)
         : 0;
 
       el.style.display = 'block';
       el.style.width = `${widthPt}pt`;
       el.style.maxWidth = `${widthPt}pt`;
       el.style.height = heightPt ? `${Math.max(80, heightPt)}pt` : 'auto';
+      el.setAttribute('width', String(Math.round(clampedWidthPx)));
+      if (finalHeightPx > 0) {
+        el.setAttribute('height', String(Math.round(finalHeightPx)));
+      }
       el.style.margin = '8pt 0';
       el.style.pageBreakInside = 'avoid';
       el.style.breakInside = 'avoid';
-      el.removeAttribute('width');
-      el.removeAttribute('height');
+      preparedWordImages++;
     });
+
+    console.debug('[DOCX Export] Prepared image dimensions', { preparedWordImages });
 
     tempDiv.querySelectorAll('table').forEach((el) => {
       el.style.marginTop = '8pt';
@@ -1064,7 +1159,7 @@ function exportPlugin(editor) {
             body { font-family: Arial, sans-serif; }
             table, td, th { border: 1px solid #000; border-collapse: collapse; }
             td, th { padding: 8px; }
-            img { max-width: 375pt; height: auto; }
+            img { max-width: 375pt; }
             ${css}
             ${getRichExportStyleOverrides({ imageMaxWidthPt: 375 })}
           </style>
@@ -1381,7 +1476,7 @@ function exportPlugin(editor) {
           <meta charset="utf-8" />
           ${externalStyles}
           ${externalScripts}
-          <style>${css}</style>
+          <style>${sanitizeRichExportCss(css)} ${getRichExportStyleOverrides({ imageMaxWidthPt: 375 })}</style>
         </head>
         <body>${tempDiv.innerHTML}</body>
       </html>

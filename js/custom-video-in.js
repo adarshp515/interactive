@@ -1791,7 +1791,7 @@ function customVideoIn(editor) {
       <script src="https://cdn.rawgit.com/bpampuch/pdfmake/0.1.24/build/vfs_fonts.js"></script> 
       <script src="https://cdn.datatables.net/buttons/1.2.4/js/buttons.html5.min.js"></script> 
       <script src="https://cdn.datatables.net/buttons/1.2.1/js/buttons.print.min.js"></script> 
-      <script src="https://code.highcharts.com/highcharts.js"></script> 
+      <script src="https://code.highcharts.com/stock/highstock.js"></script> 
       <script src="https://code.highcharts.com/modules/drilldown.js"></script> 
       <script>
         document.addEventListener('DOMContentLoaded', function() {

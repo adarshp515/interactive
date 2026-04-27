@@ -3,19 +3,25 @@ function customChartCommonJson(editor) {
     editor.on('load', () => {
         const iframeHead = editor.Canvas.getDocument().head;
 
+        const hasScript = (src) =>
+            Array.from(iframeHead.querySelectorAll('script[src]')).some((scriptEl) => {
+                const existingSrc = String(scriptEl.src || '');
+                return existingSrc === src || existingSrc.includes(src.replace(/^https?:\/\//, ''));
+            });
+
         const libs = [
-            "https://cdn.jsdelivr.net/npm/highcharts@11/highcharts.js",
             "https://code.highcharts.com/highcharts-3d.js",
             "https://code.highcharts.com/highcharts-more.js",
             "https://code.highcharts.com/modules/data.js",
             "https://code.highcharts.com/modules/exporting.js",
             "https://code.highcharts.com/modules/accessibility.js",
-            "https://cdn.jsdelivr.net/npm/highcharts@11/modules/drilldown.js",
+            "https://code.highcharts.com/modules/drilldown.js",
             "https://code.highcharts.com/modules/export-data.js",
             "https://code.highcharts.com/modules/offline-exporting.js"
         ];
 
         libs.forEach(src => {
+            if (hasScript(src)) return;
             const s = document.createElement("script");
             s.src = src;
             iframeHead.appendChild(s);
@@ -323,7 +329,7 @@ function customChartCommonJson(editor) {
                 resizable: 1,
                 jsonFileIndex: '0',
                 'json-file-index': '0',
-                custom_line_chartsrc: "https://cdn.jsdelivr.net/npm/highcharts@11/highcharts.js",
+                custom_line_chartsrc: "https://code.highcharts.com/stock/highstock.js",
                 droppable: 0,
                 stylable: 1,
                 attributes: {
@@ -2276,7 +2282,11 @@ function customChartCommonJson(editor) {
 
                     const loadHighcharts = () => {
                         const chartType = "{[ SelectChart ]}" || "pie";
-                        const highchartsCoreSrc = "{[ custom_line_chartsrc ]}" || "https://cdn.jsdelivr.net/npm/highcharts@11/highcharts.js";
+                        const requestedCoreSrc = "{[ custom_line_chartsrc ]}" || "https://code.highcharts.com/stock/highstock.js";
+                        const requestedCoreSrcText = String(requestedCoreSrc || '');
+                        const highchartsCoreSrc = (requestedCoreSrcText.includes('cdn.jsdelivr.net/npm/highcharts@11') || requestedCoreSrcText.includes('/highcharts.js'))
+                            ? "https://code.highcharts.com/stock/highstock.js"
+                            : requestedCoreSrc;
                         const isDrilldownChart = chartType.includes('drilldown');
                         const hasDrilldownSupport = () => !!(
                             window.Highcharts &&
@@ -2290,7 +2300,7 @@ function customChartCommonJson(editor) {
                             if (highchartsCoreSrc.indexOf('/highstock.js') !== -1) {
                                 return highchartsCoreSrc.replace('/highstock.js', '/modules/' + moduleFile);
                             }
-                            return "https://cdn.jsdelivr.net/npm/highcharts@11/modules/" + moduleFile;
+                            return "https://code.highcharts.com/modules/" + moduleFile;
                         };
                         const waitForDrilldownSupport = (done) => {
                             let settled = false;

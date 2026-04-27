@@ -218,6 +218,11 @@ function customTable(editor) {
         td.style.backgroundColor = '';
         td.style.color = '';
         td.style.fontFamily = '';
+        const cellContent = td.querySelector('div');
+        if (cellContent) {
+          cellContent.style.color = '';
+          cellContent.style.fontFamily = '';
+        }
         td.removeAttribute('data-highlighted');
 
         const id = td.id;
@@ -251,6 +256,13 @@ function customTable(editor) {
             td.style.color = highlightStyles.textColor;
             if (highlightStyles.fontFamily) {
               td.style.fontFamily = highlightStyles.fontFamily;
+            }
+            const cellContent = td.querySelector('div');
+            if (cellContent) {
+              cellContent.style.color = highlightStyles.textColor;
+              if (highlightStyles.fontFamily) {
+                cellContent.style.fontFamily = highlightStyles.fontFamily;
+              }
             }
             td.setAttribute('data-highlighted', 'true');
 
@@ -718,16 +730,6 @@ function customTable(editor) {
       td[data-highlighted="true"], th[data-highlighted="true"] {
         position: relative;
       }
-      td[data-highlighted="true"]::after, th[data-highlighted="true"]::after {
-        content: "★";
-        position: absolute;
-        top: 2px;
-        right: 2px;
-        font-size: 10px;
-        color: #ff6b35;
-        font-weight: bold;
-        z-index: 1;
-      }
 
       .formula-suggestions {
         font-family: Arial, sans-serif !important;
@@ -789,9 +791,6 @@ function customTable(editor) {
           print-color-adjust: exact !important;
         }
         
-        td[data-highlighted="true"]::after, th[data-highlighted="true"]::after {
-          display: none !important;
-        }
       }
     `;
     head.appendChild(style);
@@ -4598,15 +4597,32 @@ function customTable(editor) {
             highlightedCells.forEach(cell => {
               const cellComponent = editor.DomComponents.getComponentFromElement(cell);
               let bgColor = '#ffff99';
+              let textColor = '';
+              let fontFamily = '';
 
               if (cellComponent) {
                 const componentBgColor = cellComponent.getStyle()['background-color'];
                 if (componentBgColor) {
                   bgColor = componentBgColor;
                 }
+                textColor = cellComponent.getStyle()['color'] || '';
+                fontFamily = cellComponent.getStyle()['font-family'] || '';
               }
 
               cell.style.backgroundColor = bgColor;
+              cell.style.color = textColor;
+              if (fontFamily) {
+                cell.style.fontFamily = fontFamily;
+              }
+
+              const cellContent = cell.querySelector('div');
+              if (cellContent) {
+                cellContent.style.color = textColor;
+                if (fontFamily) {
+                  cellContent.style.fontFamily = fontFamily;
+                }
+              }
+
               cell.style.webkitPrintColorAdjust = 'exact';
               cell.style.colorAdjust = 'exact';
               cell.style.printColorAdjust = 'exact';

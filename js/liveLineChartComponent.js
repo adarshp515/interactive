@@ -15,7 +15,6 @@ function addLiveLineChartComponent(editor) {
         tagName: 'div',
         draggable: true,
         droppable: false,
-        'script-deps': 'https://code.highcharts.com/highcharts.js',
         traits: [
           {
             type: 'text',
@@ -142,11 +141,20 @@ function addLiveLineChartComponent(editor) {
           };
 
           if (typeof Highcharts === 'undefined') {
-            const script = document.createElement('script');
-            script.src = 'https://code.highcharts.com/highcharts.js';
-            script.onload = initChart;
-            script.onerror = () => console.error('Failed to load Highcharts');
-            document.head.appendChild(script);
+            const hasExistingHighchartsScript = Array.from(document.querySelectorAll('script[src]')).some((scriptEl) => {
+              const src = String(scriptEl.src || '');
+              return src.includes('code.highcharts.com/stock/highstock.js') || src.includes('code.highcharts.com/highcharts.js');
+            });
+
+            if (hasExistingHighchartsScript) {
+              setTimeout(initChart, 500);
+            } else {
+              const script = document.createElement('script');
+              script.src = 'https://code.highcharts.com/stock/highstock.js';
+              script.onload = initChart;
+              script.onerror = () => console.error('Failed to load Highcharts');
+              document.head.appendChild(script);
+            }
           } else {
             initChart();
           }
