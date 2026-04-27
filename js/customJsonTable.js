@@ -3,6 +3,16 @@ function jsontablecustom(editor) {
   const canvasDoc = editor.Canvas.getDocument();
   const style = canvasDoc.createElement('style');
   style.innerHTML = `
+        .json-table-container table,
+        .json-table-container th,
+        .json-table-container td,
+        .json-table-wrapper table,
+        .json-table-wrapper th,
+        .json-table-wrapper td {
+            border: none !important;
+            box-shadow: none !important;
+            outline: none !important;
+        }
     table.dataTable thead th,
     table.dataTable thead td {
       border-bottom: none !important;
@@ -931,18 +941,11 @@ function jsontablecustom(editor) {
                 const canvasDoc = editor.Canvas.getDocument();
                 const tableElement = canvasDoc.getElementById(tableId);
                 if (!tableElement) return;
-                const borderStyle = this.get('table-border-style') || 'solid';
-                const borderWidth = this.get('table-border-width') || '1';
-                const borderColor = this.get('table-border-color') || '#000000';
-                const borderOpacity = this.get('table-border-opacity') || '100';
                 const bgColor = this.get('table-bg-color') || '#ffffff';
                 const textColor = this.get('table-text-color') || '#000000';
                 const fontFamily = this.get('table-font-family') || 'Arial, sans-serif';
                 const textAlign = this.get('table-text-align') || 'left';
                 const verticalAlign = this.get('table-vertical-align') || 'middle';
-                const opacity = parseInt(borderOpacity) / 100;
-                const rgbBorder = hexToRgb(borderColor);
-                const borderColorWithOpacity = `rgba(${rgbBorder.r}, ${rgbBorder.g}, ${rgbBorder.b}, ${opacity})`;
                 const wrapper = editor.DomComponents.getWrapper();
                 const tableComp = wrapper.find(`#${tableId}`)[0];
                 // Only force a uniform cell background when the user explicitly changed it away from default.
@@ -952,16 +955,16 @@ function jsontablecustom(editor) {
                     tableComp.addStyle({
                         'background-color': bgColor,
                         'border-collapse': 'collapse',
+                        'border': 'none',
                     });
 
                     const cells = tableComp.find('td, th');
                     cells.forEach(cellComp => {
-                        const borderValue = borderStyle === 'none' ? 'none' : `${borderWidth}px ${borderStyle} ${borderColorWithOpacity}`;
                         const cellEl = cellComp.getEl && cellComp.getEl();
                         const isHighlighted = cellEl && cellEl.getAttribute('data-highlighted') === 'true';
 
                         const styleUpdate = {
-                            'border': borderValue,
+                            'border': 'none',
                             'color': textColor,
                             'font-family': fontFamily,
                             'padding': '8px',

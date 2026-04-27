@@ -2342,12 +2342,13 @@
 
       const preservedSettings = preserveAllSettings();
       const hasGridWrapper = !!gridWrapperEl;
-      const continuationComponentType =
-        sourceJsonTableComponent && sourceJsonTableComponent.get
-          ? sourceJsonTableComponent.get("type") || "json-table"
-          : component.get?.("type") || "json-table";
+      const continuationComponentType = hasGridWrapper
+        ? "default"
+        : (sourceJsonTableComponent && sourceJsonTableComponent.get
+            ? sourceJsonTableComponent.get("type") || "json-table"
+            : component.get?.("type") || "json-table");
 
-      const elementToComponentConfig = (element, componentType) => {
+      const elementToComponentConfig = (element, componentType, recurseChildren = false) => {
         const attributes = {};
         Array.from(element.attributes || []).forEach((attr) => {
           if (attr.name !== "class" && attr.name !== "style") {
@@ -2378,12 +2379,84 @@
           config.type = componentType;
         }
 
+        if (recurseChildren && element.children && element.children.length > 0) {
+          const childConfigs = Array.from(element.children)
+            .map((child) => {
+              const childClasses = Array.from(child.classList || []);
+              const childType =
+                (child.getAttribute && child.getAttribute("data-gjs-type") === "json-table") ||
+                childClasses.includes("json-table-wrapper") ||
+                childClasses.includes("json-table-container")
+                  ? "json-table"
+                  : undefined;
+
+              if (childType === "json-table") {
+                const jsonTableAttributes = {};
+                Array.from(child.attributes || []).forEach((attr) => {
+                  if (attr.name !== "class" && attr.name !== "style") {
+                    jsonTableAttributes[attr.name] = attr.value;
+                  }
+                });
+
+                if (modifiedState && !jsonTableAttributes["data-json-state"]) {
+                  jsonTableAttributes["data-json-state"] = modifiedState;
+                } else if (!jsonTableAttributes["data-json-state"] && sourceStateAttr) {
+                  jsonTableAttributes["data-json-state"] = sourceStateAttr;
+                }
+
+                jsonTableAttributes["data-continuation-table"] = "true";
+                jsonTableAttributes["data-split-table"] = "continuation";
+                jsonTableAttributes["data-original-table-id"] =
+                  sharedTableId || tableId || "";
+                jsonTableAttributes["data-source-table-id"] =
+                  sharedTableId || tableId || "";
+                jsonTableAttributes["data-rows-kept"] = rowsToKeep;
+                jsonTableAttributes["data-copy-header"] = copyHeader ? "true" : "false";
+
+                const jsonTableStyle = {};
+                if (child.style) {
+                  for (let i = 0; i < child.style.length; i++) {
+                    const prop = child.style[i];
+                    const value = child.style.getPropertyValue(prop);
+                    if (value) {
+                      jsonTableStyle[prop] = value;
+                    }
+                  }
+                }
+
+                return {
+                  type: "json-table",
+                  tagName: child.tagName ? child.tagName.toLowerCase() : "div",
+                  attributes: jsonTableAttributes,
+                  classes: childClasses.includes("json-table-container")
+                    ? childClasses
+                    : ["json-table-container", "standard"],
+                  style: jsonTableStyle,
+                  components: Array.from(child.children || [])
+                    .map((grandChild) =>
+                      elementToComponentConfig(grandChild, undefined, true),
+                    )
+                    .filter(Boolean),
+                };
+              }
+
+              return elementToComponentConfig(child, childType, true);
+            })
+            .filter(Boolean);
+
+          if (childConfigs.length > 0) {
+            config.components = childConfigs;
+            delete config.content;
+          }
+        }
+
         return config;
       };
 
       const newComponentConfig = elementToComponentConfig(
         continuationWrapper,
         continuationComponentType,
+        hasGridWrapper,
       );
 
       Object.assign(newComponentConfig, preservedSettings);
@@ -2398,11 +2471,13 @@
       setTimeout(() => {
         if (!newComponent) return;
 
-        const tableComponent =
-          newComponent.find("[data-gjs-type='json-table']")[0] ||
-          newComponent.find(".json-table-container")[0] ||
-          newComponent.find("table")[0] ||
-          newComponent;
+        const tableComponent = hasGridWrapper
+          ?
+            newComponent.find("[data-gjs-type='json-table']")[0] ||
+            newComponent.find(".json-table-container")[0] ||
+            newComponent.find("table")[0] ||
+            newComponent
+          : newComponent;
 
         Object.entries(preservedSettings).forEach(([key, value]) => {
           try {
