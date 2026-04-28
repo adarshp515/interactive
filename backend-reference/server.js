@@ -305,6 +305,13 @@ async function renderTemplateForJson(browser, templateHtml, jsonObject, baseUrl,
       timeout: 60000,
     });
 
+    await page.waitForFunction(
+      () =>
+        window.__BULK_JSON_BINDINGS_READY__ === true ||
+        !document.querySelector("[my-input-json], [data-watermark-json-path]"),
+      { timeout: 10000 }
+    ).catch(() => {});
+
     await waitForChartsToRender(page);
     await freezeChartsInPage(page);
 

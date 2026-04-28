@@ -727,13 +727,42 @@ editor.Commands.add("open-modal", {
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = html;
 
+    function normalizeBulkPayloadPath(pathExpression) {
+      let path = String(pathExpression || "")
+        .trim()
+        .replace(/^['"]|['"]$/g, "");
+
+      if (!path) return "";
+
+      path = path
+        .replace(/^\.+/, "")
+        .replace(/\.\[/g, "[")
+        .replace(/\.+/g, ".");
+
+      if (path.startsWith("__i_designer_template_values.")) {
+        return path;
+      }
+
+      const firstDotIndex = path.indexOf(".");
+      if (firstDotIndex > 0) {
+        const firstToken = path.slice(0, firstDotIndex);
+        const looksLikeLanguageRoot =
+          /^(english|hindi|marathi|gujarati|tamil|telugu|kannada|malayalam|bengali|punjabi|urdu|arabic|french|german|spanish|italian|portuguese|russian|chinese|japanese|korean|[a-z]{2}(?:-[a-z]{2})?)$/i.test(firstToken);
+
+        if (looksLikeLanguageRoot) {
+          path = path.slice(firstDotIndex + 1);
+        }
+      }
+
+      return path.replace(/\.\[/g, "[");
+    }
+
     const mappingMap = {};
     tempDiv.querySelectorAll("[my-input-json]").forEach(el => {
       const id = el.id || null;
       if (id) {
         const jsonPath = el.getAttribute("my-input-json");
-        const pathWithoutLanguage = jsonPath.includes('.') ? jsonPath.split('.').slice(1).join('.') : jsonPath;
-        mappingMap[id] = pathWithoutLanguage;
+        mappingMap[id] = normalizeBulkPayloadPath(jsonPath);
       }
     });
 
@@ -742,8 +771,7 @@ editor.Commands.add("open-modal", {
     while ((match = cssRegex.exec(css)) !== null) {
       const id = match[1].trim();
       const value = match[2].trim();
-      const pathWithoutLanguage = value.includes('.') ? value.split('.').slice(1).join('.') : value;
-      mappingMap[id] = pathWithoutLanguage;
+      mappingMap[id] = normalizeBulkPayloadPath(value);
     }
 
     const inputJsonMappings = Object.keys(mappingMap).map(id => ({ [id]: mappingMap[id] }));
@@ -1278,8 +1306,8 @@ editor.Commands.add("open-modal", {
       let fileNamePayload;
       if (document.getElementById("file-name-mode").value === "json" && fileNameSaved.length) {
         fileNamePayload = fileNameSaved.map(o => {
-          const keyWithoutLanguage = o.key.includes('.') ? o.key.split('.').slice(1).join('.') : o.key;
-          return o.indexes ? `${keyWithoutLanguage}[${o.indexes}]` : keyWithoutLanguage;
+          const normalizedKey = normalizeBulkPayloadPath(o.key);
+          return o.indexes ? normalizeBulkPayloadPath(`${normalizedKey}[${o.indexes}]`) : normalizedKey;
         });
       }
 
@@ -1287,8 +1315,8 @@ editor.Commands.add("open-modal", {
       const pwMode = document.getElementById("password-mode").value;
       if (pwMode === "json" && passwordSaved.length) {
         passwordPayload = passwordSaved.map(o => {
-          const keyWithoutLanguage = o.key.includes('.') ? o.key.split('.').slice(1).join('.') : o.key;
-          return o.indexes ? `${keyWithoutLanguage}[${o.indexes}]` : keyWithoutLanguage;
+          const normalizedKey = normalizeBulkPayloadPath(o.key);
+          return o.indexes ? normalizeBulkPayloadPath(`${normalizedKey}[${o.indexes}]`) : normalizedKey;
         });
       } else if (pwMode === "custom") {
         if (passwordCustom) passwordPayload = [passwordCustom];
@@ -1587,6 +1615,30 @@ const apiUrl =
     });
 
     return nextCss;
+  };
+
+  const materializeBulkPayloadMappings = (root, payloadMappings) => {
+    if (!root || !Array.isArray(payloadMappings)) return;
+
+    payloadMappings.forEach((mapping) => {
+      if (!mapping || typeof mapping !== "object" || Array.isArray(mapping)) return;
+
+      Object.entries(mapping).forEach(([id, value]) => {
+        if (!id || id === "file_name" || id === "password") return;
+        if (Array.isArray(value) || value == null) return;
+
+        const pathValue = String(value).trim();
+        if (!pathValue) return;
+
+        const targetNode = root.querySelector(`[id="${String(id).replace(/"/g, '\\"')}"]`);
+        if (!targetNode) return;
+
+        targetNode.setAttribute("my-input-json", pathValue);
+        if (!targetNode.hasAttribute("data-json-file-index")) {
+          targetNode.setAttribute("data-json-file-index", "0");
+        }
+      });
+    });
   };
 
   const renderTemplateAwareValue = (binding, jsonObject) => {
@@ -2041,9 +2093,10 @@ const apiUrl =
   };
 
   const bulkAssistiveRuntime = buildBulkAssistiveRuntime();
-  const bulkWatermarkJsonResolverScript = `
+  const bulkJsonBindingResolverScript = `
     <script>
-      (function resolveJsonWatermarks() {
+      (function resolveBulkJsonBindings() {
+        window.__BULK_JSON_BINDINGS_READY__ = false;
         function tokenizePath(pathExpression) {
           return String(pathExpression || '')
             .replace(/\\[(\\d+)\\]/g, '.$1')
@@ -2103,6 +2156,111 @@ const apiUrl =
           return undefined;
         }
 
+        function decodeTemplateText(value) {
+          try {
+            return decodeURIComponent(String(value == null ? '' : value));
+          } catch (err) {
+            return String(value == null ? '' : value);
+          }
+        }
+
+        function escapeRegExp(value) {
+          return String(value || '').replace(/[-\\/\\\\^$*+?.()|[\\]{}]/g, '\\\\$&');
+        }
+
+        function getPlaceholderTokens(pathExpression) {
+          var tokens = tokenizePath(pathExpression);
+          if (!tokens.length) return [];
+          var originalPath = String(pathExpression || '').trim().replace(/^\\.+/, '');
+
+          var lastNamedToken = '';
+          for (var i = tokens.length - 1; i >= 0; i--) {
+            if (!/^\\d+$/.test(String(tokens[i]))) {
+              lastNamedToken = String(tokens[i]);
+              break;
+            }
+          }
+
+          var candidates = [];
+          if (lastNamedToken) candidates.push(lastNamedToken);
+          candidates.push(tokens.join('.'));
+          if (originalPath) {
+            candidates.push(originalPath);
+            var firstDotIndex = originalPath.indexOf('.');
+            if (firstDotIndex > 0) {
+              var firstToken = originalPath.slice(0, firstDotIndex);
+              if (/^(english|hindi|marathi|gujarati|tamil|telugu|kannada|malayalam|bengali|punjabi|urdu|arabic|french|german|spanish|italian|portuguese|russian|chinese|japanese|korean|[a-z]{2}(?:-[a-z]{2})?)$/i.test(firstToken)) {
+                candidates.push(originalPath.slice(firstDotIndex + 1));
+              }
+            }
+          }
+
+          return candidates.filter(function(value, index, arr) {
+            return value && arr.indexOf(value) === index;
+          });
+        }
+
+        function renderTemplateValue(templateText, pathExpression, value) {
+          var rendered = String(templateText || '');
+          var valueText = String(value == null ? '' : value);
+          if (String(pathExpression || '').indexOf('__i_designer_template_values.') === 0) {
+            return valueText;
+          }
+          var tokens = getPlaceholderTokens(pathExpression);
+
+          if (!tokens.length) return valueText;
+
+          var beforeReplace = rendered;
+          tokens.forEach(function(token) {
+            rendered = rendered.replace(new RegExp(escapeRegExp('{' + token + '}'), 'g'), valueText);
+          });
+
+          return rendered === beforeReplace ? valueText : rendered;
+        }
+
+        function applyTextBindingValues() {
+          var jsonObject = getCurrentJsonObject();
+
+          document.querySelectorAll('[my-input-json]').forEach(function(node) {
+            if (!node || /^(SCRIPT|STYLE|LINK|META)$/i.test(node.tagName || '')) return;
+            if (node.closest && node.closest('[data-watermark-json-path]')) return;
+
+            var rawPathExpression = node.getAttribute('my-input-json') || '';
+            var paths = rawPathExpression.split(',').map(function(path) {
+              return path.trim();
+            }).filter(Boolean);
+            if (!paths.length) return;
+
+            var templateText = decodeTemplateText(node.getAttribute('data-template-text') || '');
+            var hasTemplate = /\\{[^{}]+\\}/.test(templateText);
+            var rendered = hasTemplate ? templateText : null;
+            var directValue;
+
+            paths.forEach(function(pathExpression, index) {
+              var value = resolveFromAnyLanguage(jsonObject, pathExpression, '');
+              if (value === undefined || value === null) return;
+
+              if (hasTemplate) {
+                rendered = renderTemplateValue(rendered, pathExpression, value);
+              } else if (index === 0 && directValue === undefined) {
+                directValue = value;
+              }
+            });
+
+            var finalValue = hasTemplate ? rendered : directValue;
+            if (finalValue === undefined || finalValue === null) return;
+
+            if (/^(INPUT|TEXTAREA|SELECT)$/i.test(node.tagName || '')) {
+              node.value = String(finalValue);
+              node.setAttribute('value', String(finalValue));
+            } else if (hasTemplate) {
+              node.innerHTML = String(finalValue);
+            } else {
+              node.textContent = String(finalValue);
+            }
+          });
+        }
+
         function applyWatermarkValues() {
           var jsonObject = getCurrentJsonObject();
           document.querySelectorAll('[data-watermark-json-path]').forEach(function(node) {
@@ -2117,9 +2275,15 @@ const apiUrl =
         }
 
         if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', applyWatermarkValues);
+          document.addEventListener('DOMContentLoaded', function() {
+            applyTextBindingValues();
+            applyWatermarkValues();
+            window.__BULK_JSON_BINDINGS_READY__ = true;
+          });
         } else {
+          applyTextBindingValues();
           applyWatermarkValues();
+          window.__BULK_JSON_BINDINGS_READY__ = true;
         }
       })();
     </script>
@@ -2129,6 +2293,7 @@ const apiUrl =
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = html;
     restoreTemplateAwareTextForBulkExport(tempDiv);
+    materializeBulkPayloadMappings(tempDiv, inputJsonMappings);
     let workingCss = applyTemplateAwarePathOverrides(tempDiv, css);
 
     // Hide editor-only page-break markers in Bulk Export output.
@@ -2160,13 +2325,14 @@ const apiUrl =
           ${bulkAssistiveRuntime.styles}
           <style>${cleanedCss}</style>
         </head>
-        <body>${bulkAssistiveRuntime.bodyStart}${tempDiv.innerHTML}${bulkWatermarkJsonResolverScript}${bulkAssistiveRuntime.scripts}</body>
+        <body>${bulkAssistiveRuntime.bodyStart}${tempDiv.innerHTML}${bulkJsonBindingResolverScript}${bulkAssistiveRuntime.scripts}</body>
       </html>
     `;
   } else {
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = html;
     restoreTemplateAwareTextForBulkExport(tempDiv);
+    materializeBulkPayloadMappings(tempDiv, inputJsonMappings);
     const workingCss = applyTemplateAwarePathOverrides(tempDiv, css);
 
     // Hide editor-only page-break markers in Bulk Export output.
@@ -2184,7 +2350,7 @@ const apiUrl =
           ${bulkAssistiveRuntime.styles}
           <style>${workingCss}</style>
         </head>
-        <body>${bulkAssistiveRuntime.bodyStart}${tempDiv.innerHTML}${bulkWatermarkJsonResolverScript}${bulkAssistiveRuntime.scripts}</body>
+        <body>${bulkAssistiveRuntime.bodyStart}${tempDiv.innerHTML}${bulkJsonBindingResolverScript}${bulkAssistiveRuntime.scripts}</body>
       </html>
     `;
   }
