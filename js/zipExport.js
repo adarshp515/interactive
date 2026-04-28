@@ -8015,11 +8015,35 @@
                     return undefined;
                   }
 
+                  function loadWatermarkJsonByFileName(fileName) {
+                    if (!fileName) {
+                      return Array.isArray(jsonData1) && jsonData1[0] ? jsonData1[0] : {};
+                    }
+
+                    var candidates = [
+                      'common_json_' + fileName,
+                      'common_json_' + fileName + '.json',
+                    ];
+
+                    for (var i = 0; i < candidates.length; i++) {
+                      var raw = localStorage.getItem(candidates[i]);
+                      if (!raw) continue;
+                      try {
+                        return JSON.parse(raw);
+                      } catch (err) {
+                        continue;
+                      }
+                    }
+
+                    return Array.isArray(jsonData1) && jsonData1[0] ? jsonData1[0] : {};
+                  }
+
                   function updateWatermarkContent() {
-                    var currentJson = Array.isArray(jsonData1) && jsonData1[0] ? jsonData1[0] : {};
                     document.querySelectorAll('[data-watermark-json-path]').forEach(function(node) {
                       var pathExpression = node.getAttribute('data-watermark-json-path') || '';
                       var selectedLanguage = node.getAttribute('data-watermark-json-language') || '';
+                      var selectedFile = node.getAttribute('data-watermark-json-file') || '';
+                      var currentJson = loadWatermarkJsonByFileName(selectedFile);
                       var value = resolveWatermarkJsonValue(currentJson, pathExpression, selectedLanguage);
                       if (value === undefined || value === null || String(value).trim() === '') {
                         value = node.getAttribute('data-watermark-static-text') || node.textContent || '';

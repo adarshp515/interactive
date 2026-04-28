@@ -6430,6 +6430,7 @@ padding: 8px;
     const watermarkTextSource = watermarkText.source || "static";
     const watermarkTextJsonPath = watermarkText.jsonPath || "";
     const watermarkTextJsonLanguage = watermarkText.jsonLanguage || "";
+    const watermarkTextJsonFile = watermarkText.jsonFile || "";
     const watermarkFontSize = watermarkText.fontSize || 48;
     const watermarkColor = watermarkText.color || "#000000";
     const watermarkOpacity = Math.round((watermarkText.opacity || 0.3) * 100);
@@ -6441,6 +6442,63 @@ padding: 8px;
       (watermarkImage.opacity || 0.3) * 100,
     );
     const watermarkImageRotation = watermarkImage.rotation || 0;
+
+    // Pull available datasource file names from storage for watermark selection.
+    const getStoredJsonFileNames = () => {
+      const fromList = (localStorage.getItem("common_json_files") || "")
+        .split(",")
+        .map((name) => name.trim())
+        .filter(Boolean);
+
+      if (fromList.length) return fromList;
+
+      const derived = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key || key === "common_json" || key === "common_json_files") continue;
+        if (key.startsWith("common_json_")) {
+          derived.push(key.replace("common_json_", ""));
+        }
+      }
+
+      return derived;
+    };
+
+    const loadStoredJsonData = (fileName) => {
+      if (!fileName) {
+        try {
+          return JSON.parse(localStorage.getItem("common_json") || "{}");
+        } catch (err) {
+          return {};
+        }
+      }
+
+      const candidates = [
+        `common_json_${fileName}`,
+        `common_json_${fileName}.json`,
+      ];
+
+      for (const candidate of candidates) {
+        const raw = localStorage.getItem(candidate);
+        if (!raw) continue;
+        try {
+          return JSON.parse(raw);
+        } catch (err) {
+          continue;
+        }
+      }
+
+      return {};
+    };
+
+    const storedJsonFileNames = getStoredJsonFileNames();
+    const watermarkJsonRootOptions = (() => {
+      const root = loadStoredJsonData(watermarkTextJsonFile);
+      if (!root || typeof root !== "object") return [];
+      return Object.keys(root).filter((key) => {
+        return root[key] && typeof root[key] === "object";
+      });
+    })();
 
     this.editor.Modal.setTitle("Word-Style Page Elements Settings");
     this.editor.Modal.setContent(`
@@ -6597,20 +6655,41 @@ padding: 8px;
 
       <div id="settingsWatermarkJsonSection" style="display: ${watermarkTextSource === "json" ? "block" : "none"};">
         <div class="page-setup-row">
-          <label class="page-setup-label">JSON Key:</label>
+          <label class="page-setup-label">JSON File:</label>
+          <select id="settingsWatermarkJsonFile" class="page-setup-control">
+            ${storedJsonFileNames
+              .map((fileName) => {
+                const safeName = fileName.replace(/"/g, "&quot;");
+                const selected = fileName === watermarkTextJsonFile ? "selected" : "";
+                return `<option value="${safeName}" ${selected}>${safeName}</option>`;
+              })
+              .join("")}
+          </select>
+        </div>
+
+        <div class="page-setup-row">
+          <label class="page-setup-label">Data Source:</label>
+          <select id="settingsWatermarkJsonLanguage" class="page-setup-control">
+            <option value="">Default</option>
+            ${watermarkJsonRootOptions
+              .map((rootKey) => {
+                const safeKey = rootKey.replace(/"/g, "&quot;");
+                const selected = rootKey === watermarkTextJsonLanguage ? "selected" : "";
+                return `<option value="${safeKey}" ${selected}>${safeKey}</option>`;
+              })
+              .join("")}
+          </select>
+        </div>
+
+        <div class="page-setup-row">
+          <label class="page-setup-label">JSON Path:</label>
           <div style="display:flex; gap:8px; align-items:center; flex:1;">
             <input
               type="text"
               id="settingsWatermarkJsonPath"
               class="page-setup-control"
               value="${watermarkTextJsonPath}"
-              placeholder="Select JSON key"
-              readonly
-            >
-            <input
-              type="hidden"
-              id="settingsWatermarkJsonLanguage"
-              value="${watermarkTextJsonLanguage}"
+              placeholder="Select or type JSON path"
             >
             <button type="button" id="settingsWatermarkJsonPick" class="page-setup-btn page-setup-btn-secondary">Choose</button>
           </div>
@@ -7760,6 +7839,69 @@ padding: 8px;
         if (watermarkJsonSection) {
           watermarkJsonSection.style.display = e.target.value === "json" ? "block" : "none";
         }
+      });
+    }
+
+    const watermarkJsonFileSelect = document.getElementById(
+      "settingsWatermarkJsonFile",
+    );
+    const watermarkJsonSourceSelect = document.getElementById(
+      "settingsWatermarkJsonLanguage",
+    );
+    const watermarkJsonPathInput = document.getElementById(
+      "settingsWatermarkJsonPath",
+    );
+
+    const refreshWatermarkJsonSources = () => {
+      if (!watermarkJsonSourceSelect) return;
+      const selectedFile = watermarkJsonFileSelect?.value || "";
+      const root = this.getStoredJsonData(selectedFile);
+      const sourceKeys = Object.keys(root || {}).filter((key) => {
+        return root[key] && typeof root[key] === "object";
+      });
+
+      const existingValue = watermarkJsonSourceSelect.value || "";
+      watermarkJsonSourceSelect.innerHTML = '<option value="">Default</option>';
+      sourceKeys.forEach((key) => {
+        const option = document.createElement("option");
+        option.value = key;
+        option.textContent = key;
+        watermarkJsonSourceSelect.appendChild(option);
+      });
+
+      if (existingValue && sourceKeys.includes(existingValue)) {
+        watermarkJsonSourceSelect.value = existingValue;
+      }
+
+      console.log("[watermark] refreshed datasource roots", {
+        file: selectedFile,
+        roots: sourceKeys,
+      });
+    };
+
+    if (watermarkJsonFileSelect) {
+      watermarkJsonFileSelect.addEventListener("change", (e) => {
+        if (!this.pageSettings.watermark) this.pageSettings.watermark = {};
+        if (!this.pageSettings.watermark.text) this.pageSettings.watermark.text = {};
+        this.pageSettings.watermark.text.jsonFile = e.target.value;
+        refreshWatermarkJsonSources();
+      });
+    }
+
+    if (watermarkJsonSourceSelect) {
+      watermarkJsonSourceSelect.addEventListener("change", (e) => {
+        if (!this.pageSettings.watermark) this.pageSettings.watermark = {};
+        if (!this.pageSettings.watermark.text) this.pageSettings.watermark.text = {};
+        this.pageSettings.watermark.text.jsonLanguage = e.target.value;
+        console.log("[watermark] datasource root selected", e.target.value);
+      });
+    }
+
+    if (watermarkJsonPathInput) {
+      watermarkJsonPathInput.addEventListener("input", (e) => {
+        if (!this.pageSettings.watermark) this.pageSettings.watermark = {};
+        if (!this.pageSettings.watermark.text) this.pageSettings.watermark.text = {};
+        this.pageSettings.watermark.text.jsonPath = e.target.value;
       });
     }
 
@@ -9080,6 +9222,8 @@ padding: 8px;
         "static";
       const watermarkTextJsonPath =
         document.getElementById("settingsWatermarkJsonPath")?.value || "";
+      const watermarkTextJsonFile =
+        document.getElementById("settingsWatermarkJsonFile")?.value || "";
       const watermarkTextJsonLanguage =
         document.getElementById("settingsWatermarkJsonLanguage")?.value || "";
       const watermarkFontSize =
@@ -9200,6 +9344,7 @@ padding: 8px;
           content: watermarkTextContent,
           source: watermarkTextSource,
           jsonPath: watermarkTextJsonPath,
+          jsonFile: watermarkTextJsonFile,
           jsonLanguage: watermarkTextJsonLanguage,
           fontSize: watermarkFontSize,
           color: watermarkColor,
@@ -11225,8 +11370,10 @@ padding: 8px;
       watermark.text?.source === "json" ? watermark.text?.jsonPath || "" : "";
     const textWatermarkJsonLanguage =
       watermark.text?.source === "json" ? watermark.text?.jsonLanguage || "" : "";
+    const textWatermarkJsonFile =
+      watermark.text?.source === "json" ? watermark.text?.jsonFile || "" : "";
     const textWatermarkDataAttrs = textWatermarkJsonPath
-      ? ` data-watermark-json-path="${escapeHtml(textWatermarkJsonPath)}" data-watermark-json-language="${escapeHtml(textWatermarkJsonLanguage)}" data-watermark-static-text="${escapeHtml(textWatermarkValue)}"`
+      ? ` data-watermark-json-path="${escapeHtml(textWatermarkJsonPath)}" data-watermark-json-language="${escapeHtml(textWatermarkJsonLanguage)}" data-watermark-json-file="${escapeHtml(textWatermarkJsonFile)}" data-watermark-static-text="${escapeHtml(textWatermarkValue)}"`
       : "";
 
     const getAbsolutePosition = (position) => {
@@ -12938,14 +13085,14 @@ padding: 8px;
   }
 
   openWatermarkJsonPicker() {
-    let commonJson = null;
-    try {
-      commonJson = JSON.parse(localStorage.getItem("common_json") || "{}");
-    } catch (err) {
-      commonJson = {};
-    }
+    const watermarkText = this.pageSettings.watermark?.text || {};
+    const initialJsonFile = watermarkText.jsonFile || localStorage.getItem("common_json_file_name") || "";
+    const initialDataSource = watermarkText.jsonLanguage || "";
+    const initialJsonPath = watermarkText.jsonPath || "";
 
-    if (!commonJson || typeof commonJson !== "object" || !Object.keys(commonJson).length) {
+    const storedFileNames = this.getStoredJsonFileNames();
+    const hasStoredData = storedFileNames.length > 0 || localStorage.getItem("common_json");
+    if (!hasStoredData) {
       alert("No JSON keys found. Please upload/select JSON data first.");
       return;
     }
@@ -12961,18 +13108,6 @@ padding: 8px;
     const existingOverlay = document.getElementById("watermark-json-picker-overlay");
     if (existingOverlay) existingOverlay.remove();
 
-    const languageKeys = Object.keys(commonJson).filter((key) => {
-      const value = commonJson[key];
-      return value && typeof value === "object";
-    });
-    const fallbackLanguage = Object.keys(commonJson)[0] || "";
-    const initialLanguage =
-      localStorage.getItem("custom_language") ||
-      localStorage.getItem("language") ||
-      languageKeys[0] ||
-      fallbackLanguage;
-    const hasLanguageRoots = languageKeys.length > 0;
-
     const overlay = document.createElement("div");
     overlay.id = "watermark-json-picker-overlay";
     overlay.style.cssText = `
@@ -12987,19 +13122,27 @@ padding: 8px;
     `;
 
     overlay.innerHTML = `
-      <div style="width:420px; max-width:95vw; background:#fff; color:#222; border-radius:6px; box-shadow:0 14px 40px rgba(0,0,0,0.25); overflow:hidden;">
+      <div style="width:460px; max-width:95vw; background:#fff; color:#222; border-radius:6px; box-shadow:0 14px 40px rgba(0,0,0,0.25); overflow:hidden;">
         <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid #e5e5e5;">
-          <strong>Select Watermark JSON Key</strong>
+          <strong>Select Watermark JSON Path</strong>
           <button type="button" id="watermarkJsonPickerClose" style="border:0; background:transparent; font-size:20px; line-height:1; cursor:pointer;">&times;</button>
         </div>
         <div style="padding:14px; display:flex; flex-direction:column; gap:12px;">
           <label style="display:flex; flex-direction:column; gap:5px;">
-            <span style="font-size:13px; font-weight:600;">Select Language</span>
+            <span style="font-size:13px; font-weight:600;">Select JSON File</span>
+            <select id="watermarkJsonFile" class="page-setup-control"></select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:5px;">
+            <span style="font-size:13px; font-weight:600;">Select Data Source</span>
             <select id="watermarkJsonLanguage" class="page-setup-control"></select>
           </label>
           <label style="display:flex; flex-direction:column; gap:5px;">
             <span style="font-size:13px; font-weight:600;">Select JSON Key</span>
             <select id="watermarkJsonKey" class="page-setup-control"></select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:5px;">
+            <span style="font-size:13px; font-weight:600;">Or enter path manually</span>
+            <input type="text" id="watermarkJsonManualPath" class="page-setup-control" placeholder="Type JSON path" value="${escapeHtml(initialJsonPath)}">
           </label>
           <input type="text" id="watermarkJsonSearchInput" class="page-setup-control" placeholder="Search key">
           <div id="watermarkJsonPreview" style="min-height:34px; padding:8px; background:#f7f7f7; border:1px solid #eee; border-radius:4px; font-size:12px; color:#555;"></div>
@@ -13013,26 +13156,55 @@ padding: 8px;
 
     document.body.appendChild(overlay);
 
-    const languageSelect = overlay.querySelector("#watermarkJsonLanguage");
+    const fileSelect = overlay.querySelector("#watermarkJsonFile");
+    const sourceSelect = overlay.querySelector("#watermarkJsonLanguage");
     const keySelect = overlay.querySelector("#watermarkJsonKey");
+    const manualPathInput = overlay.querySelector("#watermarkJsonManualPath");
     const searchInput = overlay.querySelector("#watermarkJsonSearchInput");
     const preview = overlay.querySelector("#watermarkJsonPreview");
     const closeOverlay = () => overlay.remove();
 
-    const languageOptions = hasLanguageRoots ? languageKeys : [fallbackLanguage];
-    languageSelect.innerHTML = languageOptions
-      .map((language) => {
-        const selected = language === initialLanguage ? "selected" : "";
-        return `<option value="${escapeHtml(language)}" ${selected}>${escapeHtml(language)}</option>`;
-      })
-      .join("");
+    const loadJsonData = (fileName) => this.getStoredJsonData(fileName);
 
-    const getLanguageRoot = () => {
-      const selectedLanguage = languageSelect.value;
-      if (hasLanguageRoots && commonJson[selectedLanguage]) {
-        return commonJson[selectedLanguage];
+    const getRootForDatasource = () => {
+      const selectedFile = fileSelect.value || "";
+      const selectedSource = sourceSelect.value || "";
+      const root = loadJsonData(selectedFile);
+      // Use datasource root if present, otherwise fall back to full JSON.
+      if (selectedSource && root && typeof root[selectedSource] === "object") {
+        return root[selectedSource];
       }
-      return commonJson;
+      return root;
+    };
+
+    const renderFileOptions = () => {
+      fileSelect.innerHTML = storedFileNames
+        .map((name) => {
+          const safe = escapeHtml(name);
+          const selected = name === initialJsonFile ? "selected" : "";
+          return `<option value="${safe}" ${selected}>${safe}</option>`;
+        })
+        .join("");
+    };
+
+    const renderSourceOptions = () => {
+      const selectedFile = fileSelect.value || "";
+      const root = loadJsonData(selectedFile);
+      const keys = root && typeof root === "object"
+        ? Object.keys(root).filter((key) => root[key] && typeof root[key] === "object")
+        : [];
+
+      sourceSelect.innerHTML = '<option value="">Default</option>';
+      keys.forEach((key) => {
+        const option = document.createElement("option");
+        option.value = key;
+        option.textContent = key;
+        sourceSelect.appendChild(option);
+      });
+
+      if (initialDataSource && keys.includes(initialDataSource)) {
+        sourceSelect.value = initialDataSource;
+      }
     };
 
     const getNestedValueForPreview = (root, path) => {
@@ -13047,7 +13219,7 @@ padding: 8px;
     };
 
     const renderKeyOptions = () => {
-      const root = getLanguageRoot();
+      const root = getRootForDatasource();
       const filter = String(searchInput.value || "").toLowerCase();
       const keys = this.extractMetaDataKeys(root).filter((key) =>
         key.toLowerCase().includes(filter),
@@ -13061,20 +13233,30 @@ padding: 8px;
     };
 
     const updatePreview = () => {
+      const manualPath = String(manualPathInput.value || "").trim();
       const selectedKey = keySelect.value;
-      const value = selectedKey ? getNestedValueForPreview(getLanguageRoot(), selectedKey) : "";
+      const pathToUse = manualPath || selectedKey;
+      const value = pathToUse ? getNestedValueForPreview(getRootForDatasource(), pathToUse) : "";
       const previewValue =
         value && typeof value === "object"
           ? JSON.stringify(value).slice(0, 140)
           : String(value == null ? "" : value).slice(0, 140);
-      preview.textContent = selectedKey
-        ? `Selected: ${selectedKey}${previewValue ? ` | Preview: ${previewValue}` : ""}`
+      preview.textContent = pathToUse
+        ? `Selected: ${pathToUse}${previewValue ? ` | Preview: ${previewValue}` : ""}`
         : "Select a key";
     };
 
-    languageSelect.addEventListener("change", renderKeyOptions);
+    fileSelect.addEventListener("change", () => {
+      renderSourceOptions();
+      renderKeyOptions();
+    });
+    sourceSelect.addEventListener("change", renderKeyOptions);
     searchInput.addEventListener("input", renderKeyOptions);
-    keySelect.addEventListener("change", updatePreview);
+    keySelect.addEventListener("change", () => {
+      manualPathInput.value = keySelect.value;
+      updatePreview();
+    });
+    manualPathInput.addEventListener("input", updatePreview);
 
     overlay.querySelector("#watermarkJsonPickerClose").addEventListener("click", closeOverlay);
     overlay.querySelector("#watermarkJsonPickerCancel").addEventListener("click", closeOverlay);
@@ -13083,17 +13265,24 @@ padding: 8px;
     });
 
     overlay.querySelector("#watermarkJsonPickerApply").addEventListener("click", () => {
+      const manualPath = String(manualPathInput.value || "").trim();
       const selectedKey = keySelect.value;
-      if (!selectedKey) return;
+      const finalPath = manualPath || selectedKey;
+      if (!finalPath) return;
 
       const inputField = document.getElementById("settingsWatermarkJsonPath");
       if (inputField) {
-        inputField.value = selectedKey;
+        inputField.value = finalPath;
       }
 
-      const languageField = document.getElementById("settingsWatermarkJsonLanguage");
-      if (languageField) {
-        languageField.value = languageSelect.value;
+      const fileField = document.getElementById("settingsWatermarkJsonFile");
+      if (fileField) {
+        fileField.value = fileSelect.value;
+      }
+
+      const sourceField = document.getElementById("settingsWatermarkJsonLanguage");
+      if (sourceField) {
+        sourceField.value = sourceSelect.value;
       }
 
       const textSourceInput = document.getElementById("settingsWatermarkTextSource");
@@ -13101,14 +13290,14 @@ padding: 8px;
         textSourceInput.value = "json";
       }
 
-      const selectedValue = getNestedValueForPreview(getLanguageRoot(), selectedKey);
+      const selectedValue = getNestedValueForPreview(getRootForDatasource(), finalPath);
       const resolvedWatermarkText =
         selectedValue && typeof selectedValue === "object"
           ? JSON.stringify(selectedValue)
           : String(selectedValue == null ? "" : selectedValue);
 
       const textInput = document.getElementById("settingsWatermarkText");
-      if (textInput && resolvedWatermarkText) {
+      if (textInput) {
         textInput.value = resolvedWatermarkText;
         textInput.dispatchEvent(new Event("input", { bubbles: true }));
       }
@@ -13116,17 +13305,24 @@ padding: 8px;
       this.pageSettings.watermark = this.pageSettings.watermark || {};
       this.pageSettings.watermark.text = this.pageSettings.watermark.text || {};
       this.pageSettings.watermark.text.source = "json";
-      this.pageSettings.watermark.text.jsonPath = selectedKey;
-      this.pageSettings.watermark.text.jsonLanguage = languageSelect.value;
-      if (resolvedWatermarkText) {
-        this.pageSettings.watermark.text.content = resolvedWatermarkText;
-      }
+      this.pageSettings.watermark.text.jsonFile = fileSelect.value;
+      this.pageSettings.watermark.text.jsonPath = finalPath;
+      this.pageSettings.watermark.text.jsonLanguage = sourceSelect.value;
+      this.pageSettings.watermark.text.content = resolvedWatermarkText;
+
+      console.log("[watermark] applied JSON watermark", {
+        file: fileSelect.value,
+        source: sourceSelect.value,
+        path: finalPath,
+      });
 
       this.updateAllPageVisuals && this.updateAllPageVisuals();
 
       closeOverlay();
     });
 
+    renderFileOptions();
+    renderSourceOptions();
     renderKeyOptions();
   }
 
@@ -13250,6 +13446,45 @@ padding: 8px;
     });
 
     return keys;
+  }
+
+  getStoredJsonFileNames() {
+    const fromList = (localStorage.getItem("common_json_files") || "")
+      .split(",")
+      .map((name) => name.trim())
+      .filter(Boolean);
+
+    if (fromList.length) return fromList;
+
+    const derived = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || key === "common_json" || key === "common_json_files") continue;
+      if (key.startsWith("common_json_")) {
+        derived.push(key.replace("common_json_", ""));
+      }
+    }
+
+    return derived;
+  }
+
+  getStoredJsonData(fileName) {
+    const safeName = String(fileName || "").trim();
+    const possibleKeys = safeName
+      ? [`common_json_${safeName}`, `common_json_${safeName}.json`]
+      : ["common_json"];
+
+    for (const key of possibleKeys) {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      try {
+        return JSON.parse(raw);
+      } catch (err) {
+        console.warn("Failed to parse stored JSON:", key, err);
+      }
+    }
+
+    return {};
   }
 
   getNestedValue(obj, path) {

@@ -712,6 +712,12 @@ editor.Commands.add("open-modal", {
 
     document.getElementById("json-upload-input").addEventListener("change", async (e) => {
       const files = Array.from(e.target.files);
+
+      if (files.length && uploadedJsonFiles.some((file) => file.fromLocal)) {
+        uploadedJsonFiles = uploadedJsonFiles.filter((file) => !file.fromLocal);
+        console.log("[bulk-export] cleared preloaded storage datasource files before manual upload");
+      }
+
       for (const file of files) {
         const text = await file.text();
         let parsedData = null;
@@ -730,6 +736,18 @@ editor.Commands.add("open-modal", {
           } catch (err) {
             parsedData = null;
           }
+        }
+
+        const nextSignature = getBulkDatasourceSignature({
+          content: text,
+        });
+        const alreadyLoaded = uploadedJsonFiles.some((existingFile) => {
+          return getBulkDatasourceSignature(existingFile) === nextSignature;
+        });
+
+        if (alreadyLoaded) {
+          console.warn("Skipping duplicate bulk datasource upload:", file.name);
+          continue;
         }
 
         uploadedJsonFiles.push({
@@ -764,13 +782,33 @@ editor.Commands.add("open-modal", {
       }
     }
 
+    function getBulkDatasourceSignature(entry) {
+      const content = String(entry?.content || "").trim();
+      return content;
+    }
+
     function loadStoredDatasourceFilesForBulkModal() {
       const files = [];
       const seenStorageKeys = new Set();
+      const seenSignatures = new Set();
       const storedFileNames =
         typeof getStoredJsonFileNames === "function" ? getStoredJsonFileNames() : [];
 
-      storedFileNames.forEach((fileName) => {
+      const activeFileName = normalizeBulkDatasourceFileName(
+        localStorage.getItem("common_json_file_name"),
+        ""
+      );
+
+      const candidateFileNames = [];
+      if (activeFileName) {
+        candidateFileNames.push(activeFileName);
+      }
+
+      if (!candidateFileNames.length && storedFileNames.length) {
+        candidateFileNames.push(normalizeBulkDatasourceFileName(storedFileNames[0]));
+      }
+
+      candidateFileNames.forEach((fileName) => {
         const normalizedName = normalizeBulkDatasourceFileName(fileName);
         const possibleKeys = [
           `common_json_${fileName}`,
@@ -786,6 +824,15 @@ editor.Commands.add("open-modal", {
         const content = localStorage.getItem(storageKey);
         if (!isBulkModalJsonContent(content)) return;
 
+        const signature = getBulkDatasourceSignature({
+          name: normalizedName,
+          content,
+        });
+        if (seenSignatures.has(signature)) {
+          console.warn("Skipping duplicate stored datasource file in bulk export:", normalizedName);
+          return;
+        }
+
         files.push({
           name: normalizedName,
           content,
@@ -793,10 +840,12 @@ editor.Commands.add("open-modal", {
           storageKey,
           parsedData: JSON.parse(content),
         });
+        seenSignatures.add(signature);
         seenStorageKeys.add(storageKey);
       });
 
       if (files.length) {
+        console.log("[bulk-export] preloaded datasource file:", files[0].name);
         return files;
       }
 
@@ -815,6 +864,12 @@ editor.Commands.add("open-modal", {
         storageKey: "common_json",
         parsedData: JSON.parse(commonJsonContent),
       });
+
+      seenSignatures.add(getBulkDatasourceSignature(files[files.length - 1]));
+
+      if (files.length) {
+        console.log("[bulk-export] preloaded fallback datasource file:", files[0].name);
+      }
 
       return files;
     }
@@ -1012,8 +1067,8 @@ editor.Commands.add("open-modal", {
       let fileNamePayload;
       if (document.getElementById("file-name-mode").value === "json" && fileNameSaved.length) {
         fileNamePayload = fileNameSaved.map(o => {
-          const keyWithoutLanguage = o.key.includes('.') ? o.key.split('.').slice(1).join('.') : o.key;
-          return o.indexes ? `${keyWithoutLanguage}[${o.indexes}]` : keyWithoutLanguage;
+          const fullKeyPath = String(o.key || "").trim();
+          return o.indexes ? `${fullKeyPath}[${o.indexes}]` : fullKeyPath;
         });
       }
 
@@ -1021,8 +1076,8 @@ editor.Commands.add("open-modal", {
       const pwMode = document.getElementById("password-mode").value;
       if (pwMode === "json" && passwordSaved.length) {
         passwordPayload = passwordSaved.map(o => {
-          const keyWithoutLanguage = o.key.includes('.') ? o.key.split('.').slice(1).join('.') : o.key;
-          return o.indexes ? `${keyWithoutLanguage}[${o.indexes}]` : keyWithoutLanguage;
+          const fullKeyPath = String(o.key || "").trim();
+          return o.indexes ? `${fullKeyPath}[${o.indexes}]` : fullKeyPath;
         });
       } else if (pwMode === "custom") {
         const val = document.getElementById("password-custom-input").value.trim();
@@ -1030,6 +1085,9 @@ editor.Commands.add("open-modal", {
       }
 
       const finalPayload = [...inputJsonMappings];
+
+      console.log("[bulk-export] datasource files:", uploadedJsonFiles.map((f) => f.name));
+      console.log("[bulk-export] filename payload:", fileNamePayload);
 
       if (fileNamePayload) {
         finalPayload.push({ file_name: fileNamePayload });

@@ -100,11 +100,19 @@ function resolveOutputBaseName(jsonObject, originalName, index, payload) {
   for (const configuredPath of configuredNames) {
     const value = readValueByPath(jsonObject, configuredPath);
     if (value != null && String(value).trim()) {
-      return sanitizeFilename(String(value).trim());
+      const resolvedName = sanitizeFilename(String(value).trim());
+      console.log(
+        `[bulk-export] resolved filename from path "${configuredPath}" -> "${resolvedName}" for ${originalName}`
+      );
+      return resolvedName;
     }
   }
 
-  return sanitizeFilename(stripExtension(originalName) || `file_${index + 1}`);
+  const fallbackName = sanitizeFilename(stripExtension(originalName) || `file_${index + 1}`);
+  console.warn(
+    `[bulk-export] fallback filename used for ${originalName}; configured paths were: ${configuredNames.join(", ") || "<none>"}`
+  );
+  return fallbackName;
 }
 
 function parseJsonFile(file) {
