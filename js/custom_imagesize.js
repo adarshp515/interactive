@@ -4,13 +4,26 @@ function customImage(editor) {
 
     model: {
       init() {
-        this.listenTo(this, 'change:src', this.adjustToParentSize);
+        this.listenTo(this, 'change:src', () => this.adjustToParentSize({ force: true }));
       },
 
-      adjustToParentSize() {
+      adjustToParentSize(options = {}) {
+        const force = options && options.force === true;
         const el = this.view?.el;
         const src = this.get('src');
         if (!el || !src) return;
+
+        const style = this.getStyle ? this.getStyle() : {};
+        const hasEditedSize =
+          !!(style.width || style.height) ||
+          !!(el.style && (el.style.width || el.style.height)) ||
+          !!(this.getAttributes &&
+            (() => {
+              const attrs = this.getAttributes() || {};
+              return attrs.width || attrs.height;
+            })());
+
+        if (!force && hasEditedSize) return;
 
         setTimeout(() => {
           const parentEl = el.parentElement;
@@ -69,7 +82,7 @@ function customImage(editor) {
 
         if (!comp._resizeObserver) {
           comp._resizeObserver = new ResizeObserver(() => {
-            comp.adjustToParentSize();
+            comp.adjustToParentSize({ force: false });
           });
 
           const parentEl = el.parentElement;

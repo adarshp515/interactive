@@ -1842,7 +1842,12 @@
       const availableHeight =
         remainingSpace - headerHeight - footerHeight - controlsHeight - 10;
 
-      if (availableHeight < 100) {
+      const smallestRowHeight = rows.reduce((minHeight, row) => {
+        const rowHeight = row.offsetHeight || 40;
+        return Math.min(minHeight, rowHeight);
+      }, Infinity);
+
+      if (availableHeight < (Number.isFinite(smallestRowHeight) ? smallestRowHeight : 40)) {
         return {
           keepComponent: null,
           moveComponent: component,
@@ -1863,7 +1868,7 @@
         }
       }
 
-      const MIN_ROWS_TO_SPLIT = 3;
+      const MIN_ROWS_TO_SPLIT = 1;
       if (rowsToKeep < MIN_ROWS_TO_SPLIT) {
         return {
           keepComponent: null,

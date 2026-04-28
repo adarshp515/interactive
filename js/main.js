@@ -3254,6 +3254,37 @@ const pageHeight = parseInt(window.getComputedStyle(firstPageContent).height) ||
 const allNewPages = [];
 let globalPageNumber = 1;
 
+if (shouldPreserveExistingPageLayout(pageContainers)) {
+  for (let i = 0; i < pageContainers.length; i++) {
+    const pageContainer = pageContainers[i];
+    const skipPageNumber = pageContainer.getAttribute('data-skip-page-number') === 'true';
+
+    if (!skipPageNumber) {
+      applyPageSettings(pageContainer, pageSettings, globalPageNumber);
+      globalPageNumber++;
+    } else {
+      applyPageSettings(pageContainer, pageSettings, null);
+    }
+
+    allNewPages.push(pageContainer.outerHTML);
+  }
+
+  document.body.innerHTML = '';
+  allNewPages.forEach(html => {
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = html;
+    document.body.appendChild(wrapper.firstElementChild);
+  });
+
+  if (window.parent) {
+    window.parent.postMessage({
+      type: 'pageCountUpdate',
+      totalPages: allNewPages.length
+    }, '*');
+  }
+  return;
+}
+
 for (let i = 0; i < pageContainers.length; i++) {
   const pageContainer = pageContainers[i];
   const mainContent = pageContainer.querySelector('.main-content-area');
@@ -3389,6 +3420,18 @@ if (window.parent) {
 }
 }
 
+
+function shouldPreserveExistingPageLayout(pageContainers) {
+    const pages = Array.from(pageContainers || []);
+    if (pages.length > 1) return true;
+
+    return pages.some(function(page) {
+      return (
+        page.hasAttribute('data-page-index') ||
+        !!page.querySelector('[data-page-index], [data-split-table="continuation"], [data-continuation-table="true"]')
+      );
+    });
+  }
 
 function extractPageSettings(pageContainer) {
     const settings = {
