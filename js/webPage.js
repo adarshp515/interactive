@@ -257,7 +257,6 @@
                     content: "Insert title here",
                     attributes: {
                       class: "heading",
-                      "data-i_designer-type": "text",
                       "data-i_designer-highlightable": "true",
                     },
                   },
@@ -268,7 +267,6 @@
                       "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua",
                     attributes: {
                       class: "paragraph",
-                      "data-i_designer-type": "text",
                       "data-i_designer-highlightable": "true",
                     },
                   },

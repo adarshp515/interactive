@@ -14,6 +14,8 @@ function customTableOfContents(editor) {
         name: 'Heading',
         content: 'New Heading',
         editable: true,
+        textable: true,
+        highlightable: true,
         droppable: false,
         traits: [
           {
@@ -42,11 +44,17 @@ function customTableOfContents(editor) {
         h6.custom-heading { font-size: 12px; font-weight: bold; margin: 6px 0; }
         h7.custom-heading { font-size: 11px; font-weight: bold; margin: 4px 0; }
       `,
-        attributes: { class: 'custom-heading' },
+        attributes: {
+          class: 'custom-heading',
+          'data-i_designer-highlightable': 'true'
+        },
       },
 
       init() {
         this.on('change:level', this.updateTag);
+        if (this.getAttributes && this.getAttributes()['data-i_designer-type']) {
+          this.removeAttributes('data-i_designer-type');
+        }
       },
 
       updateTag() {

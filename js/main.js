@@ -1,4 +1,4 @@
-﻿
+
 window.editor = InteractiveDesigner.init({
   height: "100%",
   container: "#editor",
@@ -426,6 +426,9 @@ function getHtmlWithCurrentFormState(editor) {
   const liveDoc = iframe && (iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document));
   if (!liveDoc || !liveDoc.body) return tempDiv.innerHTML;
 
+  // Ensure CSS-only datasource bindings are available as attributes for export.
+  syncDatasourceAttrsFromStyleBindings(editor, liveDoc, "snapshot");
+
   const selectors = [
     'input[type="checkbox"]',
     'input[type="radio"]',
@@ -472,6 +475,66 @@ function getHtmlWithCurrentFormState(editor) {
     }
   });
 
+  const textContentSelector = [
+    "p[id]",
+    "h1[id]",
+    "h2[id]",
+    "h3[id]",
+    "h4[id]",
+    "h5[id]",
+    "h6[id]",
+    "h7[id]",
+    "span[id]",
+    "a[id]",
+    "label[id]",
+    "button[id]",
+    "td[id]",
+    "th[id]",
+  ].join(",");
+
+  liveDoc.body.querySelectorAll(textContentSelector).forEach((liveNode) => {
+    const exportNode = exportNodesById.get(liveNode.id);
+    if (!exportNode) return;
+
+    const liveHtml = liveNode.innerHTML || "";
+    if (liveHtml && !/^\s*Insert your text here\s*$/i.test(liveHtml)) {
+      exportNode.innerHTML = liveHtml;
+    }
+  });
+
+  try {
+    const wrapper = editor.getWrapper && editor.getWrapper();
+    if (wrapper && typeof walkComponentTree === "function") {
+      walkComponentTree(wrapper, (component) => {
+        const componentId = component && component.getId ? component.getId() : "";
+        if (!componentId) return;
+
+        const exportNode = exportNodesById.get(componentId);
+        if (!exportNode) return;
+
+        const templateText =
+          typeof getComponentTemplateText === "function"
+            ? getComponentTemplateText(component)
+            : "";
+        if (hasDatasourceTemplatePlaceholders(templateText)) {
+          exportNode.setAttribute("data-template-text", encodeDatasourceTemplateText(templateText));
+        }
+
+        const attrs = component.getAttributes ? component.getAttributes() : {};
+        ["my-input-json", "data-json-file-index", "data-gjs-type", "data-i_designer-type"].forEach((attrName) => {
+          const attrValue = attrs[attrName];
+          if (attrValue != null && String(attrValue) !== "") {
+            exportNode.setAttribute(attrName, String(attrValue));
+          }
+        });
+      });
+    }
+  } catch (err) {
+    console.warn("Failed to sync component text metadata for export:", err);
+  }
+
+  // Copy datasource attributes from live DOM to export snapshot
+  // Both for elements with IDs and elements with inline datasource attributes
   liveDoc.body
     .querySelectorAll("[id][my-input-json], [id][data-template-text], [id][data-json-file-index]")
     .forEach((liveNode) => {
@@ -495,6 +558,54 @@ function getHtmlWithCurrentFormState(editor) {
       }
     });
 
+  // Also handle elements without IDs that have datasource attributes
+  // This fixes bulk export for template elements that may not have explicit IDs
+  liveDoc.body
+    .querySelectorAll("[my-input-json], [data-template-text], [data-json-file-index]")
+    .forEach((liveNode) => {
+      // Skip if already handled above (has ID)
+      if (liveNode.id) return;
+
+      // Find matching element in export by traversing tree structure
+      // For now, just copy inline datasource attributes to matching position
+      const contentSnippet = liveNode.textContent ? liveNode.textContent.substring(0, 20) : "";
+      if (!contentSnippet) return;
+
+      // Find export element with similar content
+      const exportNodes = tempDiv.querySelectorAll(liveNode.tagName);
+      let matchedNode = null;
+
+      for (const candidate of exportNodes) {
+        if (candidate.id) continue; // Skip already matched
+        if (candidate.textContent && candidate.textContent.includes(contentSnippet)) {
+          matchedNode = candidate;
+          break;
+        }
+      }
+
+      if (matchedNode) {
+        [
+          "my-input-json",
+          "data-template-text",
+          "data-json-file-index",
+          "data-gjs-type",
+          "data-i_designer-type",
+        ].forEach((attrName) => {
+          if (liveNode.hasAttribute(attrName)) {
+            matchedNode.setAttribute(attrName, liveNode.getAttribute(attrName) || "");
+          }
+        });
+
+        if (liveNode.hasAttribute("data-template-text") || liveNode.hasAttribute("my-input-json")) {
+          matchedNode.innerHTML = resolveDataBoundExportContent(liveNode) || liveNode.innerHTML;
+          console.debug('[Export] resolved template content for unID\'d node', {
+            tag: liveNode.tagName,
+            snippet: contentSnippet,
+          });
+        }
+      }
+    });
+
   if (typeof window.syncFlowLayoutsFromLiveDoc === "function") {
     window.syncFlowLayoutsFromLiveDoc(tempDiv, liveDoc.body);
   }
@@ -512,6 +623,9 @@ function getPdfPreviewHtmlFromLiveCanvas(editor) {
   if (!liveDoc || !liveDoc.body) {
     return tempDiv.innerHTML;
   }
+
+  // Ensure CSS-only datasource bindings are available as attributes for export.
+  syncDatasourceAttrsFromStyleBindings(editor, liveDoc, "snapshot");
 
   const exportNodesById = new Map();
   tempDiv.querySelectorAll("[id]").forEach((node) => {
@@ -1322,9 +1436,15 @@ editor.Commands.add("open-modal", {
         if (passwordCustom) passwordPayload = [passwordCustom];
       }
 
-      const templateAwareBindingIds = getTemplateAwareBindingIdSet(editor);
       const frameEl = editor.Canvas && editor.Canvas.getFrameEl ? editor.Canvas.getFrameEl() : null;
       const liveDoc = frameEl && (frameEl.contentDocument || (frameEl.contentWindow && frameEl.contentWindow.document));
+
+      // Synchronize attributes from CSS bindings to DOM before detection
+      if (liveDoc) {
+        syncDatasourceAttrsFromStyleBindings(editor, liveDoc, "bulk-export-init");
+      }
+
+      const templateAwareBindingIds = getTemplateAwareBindingIdSet(editor);
 
       const templateAwareBindingsById = new Map();
 
@@ -1580,10 +1700,23 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
   const exportType = document.getElementById("export-type-dropdown")?.value || "pdf";
   const addGoogleTranslator = exportType === "html" && Boolean(document.getElementById("bulk-google-translator")?.checked);
   const addTextToSpeech = exportType === "html" && Boolean(document.getElementById("bulk-text-to-speech")?.checked);
-const apiUrl =
-  exportType === "pdf"
-    ? `${API_BASE_URL}/uploadPdf`
-    : `${API_BASE_URL}/uploadHtml`;
+  const apiUrl =
+    exportType === "pdf"
+      ? `${API_BASE_URL}/uploadPdf`
+      : `${API_BASE_URL}/uploadHtml`;
+
+  const activeUploadedJsonFiles = Array.isArray(uploadedJsonFiles)
+    ? uploadedJsonFiles.filter((file) =>
+      file &&
+      String(file.name || "").trim() &&
+      String(file.content || "").trim() &&
+      !String(file.name || "").toLowerCase().includes("__i_designer_template_values")
+    )
+    : [];
+
+  if (!activeUploadedJsonFiles.length) {
+    throw new Error("Please upload at least one JSON/XML datasource file before bulk export.");
+  }
 
   const effectiveTemplateBindings = Array.isArray(templateAwareBindings)
     ? templateAwareBindings.filter((binding) =>
@@ -2236,7 +2369,21 @@ const apiUrl =
             var rendered = hasTemplate ? templateText : null;
             var directValue;
 
+            if (String(rawPathExpression || '').indexOf('__i_designer_template_values.') === 0) {
+              var templateValues = jsonObject && jsonObject.__i_designer_template_values;
+              var templateId = rawPathExpression.slice('__i_designer_template_values.'.length);
+              if (templateValues && templateId && Object.prototype.hasOwnProperty.call(templateValues, templateId)) {
+                directValue = templateValues[templateId];
+                if (hasTemplate) {
+                  rendered = String(directValue);
+                }
+              }
+            }
+
             paths.forEach(function(pathExpression, index) {
+              if (directValue !== undefined && directValue !== null && hasTemplate) {
+                return;
+              }
               var value = resolveFromAnyLanguage(jsonObject, pathExpression, '');
               if (value === undefined || value === null) return;
 
@@ -2358,13 +2505,8 @@ const apiUrl =
   const formData = new FormData();
   formData.append("file", new Blob([finalHtml], { type: "text/html" }), "template.html");
 
-  for (let idx = 0; idx < uploadedJsonFiles.length; idx++) {
-    const f = uploadedJsonFiles[idx];
-
-    // Ignore stale synthetic helper files if present in local storage/upload list.
-    if (String(f?.name || "").toLowerCase().includes("__i_designer_template_values")) {
-      continue;
-    }
+  for (let idx = 0; idx < activeUploadedJsonFiles.length; idx++) {
+    const f = activeUploadedJsonFiles[idx];
 
     const fileExtension = f.name.split(".").pop().toLowerCase();
 
@@ -2384,28 +2526,31 @@ const apiUrl =
 
     if (effectiveTemplateBindings.length) {
       try {
-        const jsonObject = JSON.parse(String(jsonContent || "{}"));
+        let parsedJson = JSON.parse(String(jsonContent || "{}"));
+        let jsonArray = Array.isArray(parsedJson) ? parsedJson : [parsedJson];
 
-        if (!jsonObject || typeof jsonObject !== "object" || Array.isArray(jsonObject)) {
-          throw new Error("Invalid JSON object for template-aware bindings");
-        }
-
-        if (
-          !jsonObject.__i_designer_template_values ||
-          typeof jsonObject.__i_designer_template_values !== "object" ||
-          Array.isArray(jsonObject.__i_designer_template_values)
-        ) {
-          jsonObject.__i_designer_template_values = {};
-        }
-
-        effectiveTemplateBindings.forEach((binding) => {
-          const renderedValue = renderTemplateAwareValue(binding, jsonObject);
-          if (renderedValue !== null && renderedValue !== undefined) {
-            jsonObject.__i_designer_template_values[binding.id] = String(renderedValue);
+        jsonArray.forEach((jsonObject) => {
+          if (!jsonObject || typeof jsonObject !== "object" || Array.isArray(jsonObject)) {
+            return;
           }
+
+          if (
+            !jsonObject.__i_designer_template_values ||
+            typeof jsonObject.__i_designer_template_values !== "object" ||
+            Array.isArray(jsonObject.__i_designer_template_values)
+          ) {
+            jsonObject.__i_designer_template_values = {};
+          }
+
+          effectiveTemplateBindings.forEach((binding) => {
+            const renderedValue = renderTemplateAwareValue(binding, jsonObject);
+            if (renderedValue !== null && renderedValue !== undefined) {
+              jsonObject.__i_designer_template_values[binding.id] = String(renderedValue);
+            }
+          });
         });
 
-        jsonContent = JSON.stringify(jsonObject);
+        jsonContent = JSON.stringify(parsedJson);
       } catch (bindingErr) {
         console.warn("Template-aware JSON enrichment skipped for a file:", bindingErr);
       }
@@ -2466,7 +2611,15 @@ const apiUrl =
   try {
     const response = await fetch(apiUrl, { method: "POST", body: formData });
 
-    if (!response.ok) throw new Error(`API Error: ${response.status}`);
+    if (!response.ok) {
+      let errorText = "";
+      try {
+        errorText = await response.text();
+      } catch (readErr) {
+        errorText = "";
+      }
+      throw new Error(`API Error: ${response.status}${errorText ? ` - ${errorText}` : ""}`);
+    }
 
     const blob = await response.blob();
     const filename = getFilenameFromResponse(response, "export.zip");
@@ -2490,7 +2643,7 @@ const apiUrl =
 
     return "Export successful!";
   } catch (err) {
-    alert("Failed to export. Check console.");
+    alert(`Failed to export. ${err && err.message ? err.message : "Check console."}`);
     throw err;
   } finally {
     if (overlay) overlay.remove();
@@ -4443,6 +4596,31 @@ function applyImportedSinglePage(rawHtml, reason = "import-single-page", options
   }
 
   editor.setComponents(bodyHtml || rawHtml);
+  window.setTimeout(() => {
+    try {
+      const wrapper = editor.getWrapper && editor.getWrapper();
+      if (wrapper && typeof walkComponentTree === "function") {
+        walkComponentTree(wrapper, (component) => {
+          const componentType = component?.get?.("type");
+          const isTextComponent = ["text", "formatted-rich-text", "custom-heading"].includes(componentType);
+          if (!isTextComponent || !component.view || !component.view.el) return;
+
+          const currentHtml = component.view.el.innerHTML || "";
+          if (currentHtml && !/^\s*Insert your text here\s*$/i.test(currentHtml)) {
+            component.set?.("content", currentHtml, { silent: true });
+            component.set?.("raw-content", currentHtml, { silent: true });
+          }
+
+          const attrs = component.getAttributes ? component.getAttributes() : {};
+          if (attrs["data-template-text"] && typeof setComponentTemplateText === "function") {
+            setComponentTemplateText(component, decodeDatasourceTemplateText(attrs["data-template-text"]));
+          }
+        });
+      }
+    } catch (err) {
+      console.warn("Imported text content restore skipped:", err);
+    }
+  }, 0);
   scheduleDatasourceRebind(reason, 250);
 
   if (slideshowSettings || /data-slide\s*=/.test(bodyHtml || rawHtml || "")) {
@@ -4753,6 +4931,56 @@ function parseDatasourceBindingsFromCss(cssText) {
   return bindings;
 }
 
+function collectDatasourceBindingsFromStyles(editor, liveDoc) {
+  const mergedBindings = {};
+
+  const cssText = editor && typeof editor.getCss === "function" ? editor.getCss() : "";
+  Object.assign(mergedBindings, parseDatasourceBindingsFromCss(cssText));
+
+  const doc = liveDoc || (editor?.Canvas?.getFrameEl?.()?.contentDocument || null);
+  if (doc) {
+    const inlineCss = Array.from(doc.querySelectorAll("style"))
+      .map((node) => node.textContent || "")
+      .join("\n");
+    Object.assign(mergedBindings, parseDatasourceBindingsFromCss(inlineCss));
+  }
+
+  return mergedBindings;
+}
+
+function syncDatasourceAttrsFromStyleBindings(editor, liveDoc, reason) {
+  const bindings = collectDatasourceBindingsFromStyles(editor, liveDoc);
+  const entries = Object.entries(bindings);
+  if (!entries.length) return;
+
+  const doc = liveDoc || (editor?.Canvas?.getFrameEl?.()?.contentDocument || null);
+  if (!doc) return;
+
+  let updated = 0;
+  entries.forEach(([id, binding]) => {
+    const node = doc.getElementById(id);
+    if (!node) return;
+
+    let changed = false;
+    const currentJsonPath = String(node.getAttribute("my-input-json") || "").trim();
+    const currentFileIndex = String(node.getAttribute("data-json-file-index") || "").trim();
+
+    if (binding.myInputJson && currentJsonPath !== binding.myInputJson) {
+      node.setAttribute("my-input-json", binding.myInputJson);
+      changed = true;
+    }
+    if (binding.jsonFileIndex && currentFileIndex !== binding.jsonFileIndex) {
+      node.setAttribute("data-json-file-index", binding.jsonFileIndex);
+      changed = true;
+    }
+    if (changed) updated += 1;
+  });
+
+  if (updated > 0) {
+    console.debug(`[DataSource Sync] ${reason}: ${updated} node(s) updated from CSS bindings`);
+  }
+}
+
 function getStoredJsonFileNames() {
   const fromList = (localStorage.getItem("common_json_files") || "")
     .split(",")
@@ -4779,19 +5007,20 @@ function getJsonDataByFileIndex(fileIndex) {
   if (normalizedIndex !== "0") {
     const storedFileNames = getStoredJsonFileNames();
     const selectedFile = storedFileNames[parseInt(normalizedIndex, 10) - 1];
-    if (!selectedFile) return null;
+    if (!selectedFile) {
+      console.debug(`Datasource file index ${normalizedIndex} not found, falling back to common_json`);
+    } else {
+      const storedJson =
+        localStorage.getItem(`common_json_${selectedFile}`) ||
+        localStorage.getItem(`common_json_${selectedFile}.json`);
 
-    const storedJson =
-      localStorage.getItem(`common_json_${selectedFile}`) ||
-      localStorage.getItem(`common_json_${selectedFile}.json`);
-
-    if (!storedJson) return null;
-
-    try {
-      return JSON.parse(storedJson);
-    } catch (err) {
-      console.warn(`Failed to parse datasource file: ${selectedFile}`, err);
-      return null;
+      if (storedJson) {
+        try {
+          return JSON.parse(storedJson);
+        } catch (err) {
+          console.warn(`Failed to parse datasource file: ${selectedFile}`, err);
+        }
+      }
     }
   }
 
@@ -4984,11 +5213,16 @@ function resolveDataBoundExportContent(liveNode) {
   const jsonPath = String(liveNode.getAttribute("my-input-json") || "").trim();
   const fileIndex = String(liveNode.getAttribute("data-json-file-index") || "0").trim() || "0";
 
+  console.debug('[Export] resolveDataBoundExportContent', { id: liveNode.id || null, jsonPath, fileIndex, hasTemplate: !!templateText });
+
   if (!templateText || !jsonPath) {
     return null;
   }
 
   const commonJson = getJsonDataByFileIndex(fileIndex);
+  if (!commonJson) {
+    console.debug('[Export] no commonJson available for fileIndex', { fileIndex });
+  }
   if (!commonJson) {
     return null;
   }
@@ -5180,7 +5414,7 @@ function hasRenderableJsonTableState(component) {
 function updateComponentsWithNewJson(editor) {
   if (!editor || typeof editor.getWrapper !== "function") return 0;
 
-  const cssBindings = parseDatasourceBindingsFromCss(editor.getCss());
+  const cssBindings = collectDatasourceBindingsFromStyles(editor);
   const wrapper = editor.getWrapper();
   let refreshedComponents = 0;
 
@@ -5306,7 +5540,59 @@ editor.on("rte:enable", (view) => {
   if (!hasDatasourceTemplatePlaceholders(templateText)) return;
 
   if (view.el) {
-    view.el.innerHTML = templateText;
+    const currentHtml = view.el.innerHTML || "";
+    const isDefaultHtml = !currentHtml || /Insert your text here/i.test(currentHtml);
+    const shouldRestoreTemplate = isDefaultHtml;
+
+    if (shouldRestoreTemplate) {
+      view.el.innerHTML = templateText;
+      console.debug('[RTE] restored template text on enable', {
+        id: component?.getId?.(),
+      });
+    } else {
+      console.debug('[RTE] preserved rendered HTML on enable', {
+        id: component?.getId?.(),
+      });
+    }
+  }
+
+  // Ensure datasource attributes are set on the DOM element for bulk export
+  // This fixes template bulk export {name} placeholder resolution
+  const jsonPath = String(
+    component?.get?.("my-input-json") ||
+    component?.getAttributes?.()["my-input-json"] ||
+    ""
+  ).trim();
+  const jsonFileIndex = String(
+    component?.get?.("data-json-file-index") ||
+    component?.getAttributes?.()["data-json-file-index"] ||
+    "0"
+  ).trim() || "0";
+
+  if (view.el && (jsonPath || jsonFileIndex !== "0")) {
+    if (jsonPath) {
+      view.el.setAttribute("my-input-json", jsonPath);
+    }
+    view.el.setAttribute("data-json-file-index", jsonFileIndex);
+    view.el.setAttribute("data-template-text", encodeDatasourceTemplateText(templateText));
+    console.debug('[RTE] set datasource attributes on element', {
+      id: component?.getId?.(),
+      jsonPath,
+      jsonFileIndex,
+    });
+  }
+
+  // Force toolbar to refresh button states after RTE enable
+  const rte = component?.em?.get?.("RichTextEditor");
+  if (rte && typeof rte.updateActiveActions === "function") {
+    setTimeout(() => {
+      try {
+        rte.updateActiveActions?.();
+        console.debug('[RTE] refreshed toolbar state after enable');
+      } catch (err) {
+        console.debug('[RTE] toolbar refresh failed', err.message);
+      }
+    }, 50);
   }
 });
 
@@ -5322,8 +5608,18 @@ editor.on("rte:disable", (view) => {
 
   if (hasEditedTemplate) {
     setComponentTemplateText(component, editedTemplate);
+    console.debug('[RTE] saved edited template markup', {
+      id: component?.getId?.(),
+    });
   } else {
-    setComponentTemplateText(component, "");
+    // Keep the last stored template text so exports still resolve template bindings.
+    const preservedTemplate = getComponentTemplateText(component);
+    if (preservedTemplate) {
+      setComponentTemplateText(component, preservedTemplate);
+      console.debug('[RTE] preserved existing template markup', {
+        id: component?.getId?.(),
+      });
+    }
   }
 
   const jsonPath = String(
@@ -5334,6 +5630,19 @@ editor.on("rte:disable", (view) => {
 
   if (jsonPath) {
     scheduleDatasourceRebind("rte-template-restore", 0);
+  }
+
+  // Force toolbar to refresh button states after RTE disable
+  const rte = component?.em?.get?.("RichTextEditor");
+  if (rte && typeof rte.updateActiveActions === "function") {
+    setTimeout(() => {
+      try {
+        rte.updateActiveActions?.();
+        console.debug('[RTE] refreshed toolbar state after disable');
+      } catch (err) {
+        console.debug('[RTE] toolbar refresh after disable failed', err.message);
+      }
+    }, 50);
   }
 });
 

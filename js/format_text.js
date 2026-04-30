@@ -542,11 +542,67 @@ function addFormattedRichTextComponent(editor) {
     return 'Text';
   }
 
+  // --- RTE selection helpers (iframe-aware) ---
+
+  function getCanvasSelection() {
+    try {
+      if (editor && editor.Canvas) {
+        const canvasDoc = editor.Canvas.getDocument();
+        if (canvasDoc && canvasDoc.getSelection) {
+          return canvasDoc.getSelection();
+        }
+        const canvasWin = editor.Canvas.getWindow();
+        if (canvasWin && canvasWin.getSelection) {
+          return canvasWin.getSelection();
+        }
+      }
+    } catch (err) {}
+    return null;
+  }
+
+  function storeCurrentRteSelection(rte, root) {
+    try {
+      const sel = getCanvasSelection();
+      if (!sel || !sel.rangeCount || !root) return;
+      const range = sel.getRangeAt(0);
+      if (root.contains(range.commonAncestorContainer)) {
+        rte._lastSelection = range.cloneRange();
+      }
+    } catch (err) {}
+  }
+
+  function isBoldActiveAtCursor() {
+    const sel = getCanvasSelection();
+    if (!sel || !sel.rangeCount) return false;
+
+    const range = sel.getRangeAt(0);
+    let node = range.commonAncestorContainer;
+    if (node && node.nodeType === 3) node = node.parentElement;
+    if (!node) return false;
+
+    while (node) {
+      if (node.tagName === 'B' || node.tagName === 'STRONG') return true;
+      try {
+        const win = node.ownerDocument && node.ownerDocument.defaultView;
+        const cs = win && win.getComputedStyle ? win.getComputedStyle(node) : null;
+        if (cs && (cs.fontWeight === 'bold' || parseInt(cs.fontWeight, 10) >= 600)) {
+          return true;
+        }
+      } catch (err) {}
+      if (node.tagName === 'BODY') break;
+      node = node.parentElement;
+    }
+    return false;
+  }
+
   const customRteActions = [
     {
       name: "bold",
       icon: "<b>B</b>",
       attributes: { title: "Bold" },
+      state: function (rte) {
+        return isBoldActiveAtCursor() ? 1 : 0;
+      },
       result: function (rte) {
         return rte.exec("bold");
       }
@@ -1465,20 +1521,11 @@ function addFormattedRichTextComponent(editor) {
         }
 
         this.rteActive = true;
-        this.originalActions = rte.getAll().slice();
-        this.originalActions.forEach(action => {
-          try {
-            rte.remove(action.name);
-          } catch (e) {
-          }
-        });
 
-        customRteActions.forEach(action => {
-          try {
-            rte.add(action.name, action);
-          } catch (e) {
-          }
-        });
+        // --- DO NOT swap RTE actions ---
+        // Let GrapesJS use its native toolbar actions (bold, italic, etc.)
+        // which already have proper state tracking via queryCommandState.
+        // We only strip extras (link, wrap) after enable to keep 4 buttons.
 
         const rawContent = this.model.get('raw-content') || '';
         const isFormulaEnabled = this.model.get('formula-label') || false;
@@ -1504,7 +1551,6 @@ function addFormattedRichTextComponent(editor) {
 
         try {
           rte.enable(this, null, {
-            actions: customRteActions.map(a => a.name),
             styleWithCSS: false
           });
         } catch (e) {
@@ -1514,9 +1560,96 @@ function addFormattedRichTextComponent(editor) {
           return;
         }
 
+        // Strip extra actions (link, wrap) that GrapesJS adds by default.
+        // Keep only the 4 formatting actions.
+        const allowedActionNames = new Set(['bold', 'italic', 'underline', 'strikethrough']);
+        rte.getAll().slice().forEach(action => {
+          if (!allowedActionNames.has(action.name)) {
+            try { rte.remove(action.name); } catch (e) {}
+          }
+        });
+
+        // --- Patch rte.exec to restore iframe selection before commands ---
+        // Toolbar buttons are in the main document; clicking them steals
+        // focus from the iframe, destroying the text selection.  We save
+        // the last known good selection and restore it before every exec.
+        if (!rte._execPatched) {
+          rte._execPatched = true;
+          rte._execOriginal = rte.exec.bind(rte);
+          rte.exec = function (cmd, value) {
+            const activeView = rte._activeFormattedRichTextView;
+
+            // Focus the editable element first so execCommand targets
+            // the correct document context inside the iframe.
+            if (activeView && activeView.el) {
+              try { activeView.el.focus(); } catch (err) {}
+            }
+
+            // Restore saved selection (clone to avoid stale range issues)
+            try {
+              const sel = getCanvasSelection();
+              if (rte._lastSelection && sel) {
+                sel.removeAllRanges();
+                sel.addRange(rte._lastSelection.cloneRange());
+              }
+            } catch (err) {}
+
+            const res = rte._execOriginal(cmd, value);
+
+            // After command, re-capture the (now updated) selection and
+            // clear the old stored one so selectionchange provides fresh data.
+            rte._lastSelection = null;
+            try {
+              const sel = getCanvasSelection();
+              if (sel && sel.rangeCount) {
+                rte._lastSelection = sel.getRangeAt(0).cloneRange();
+              }
+            } catch (err) {}
+
+            // Sync updated HTML back to model so formatting persists
+            if (activeView && activeView.el && activeView.model) {
+              setTimeout(() => {
+                try {
+                  const html = activeView.el.innerHTML;
+                  activeView.model.set('raw-content', html, { silent: true });
+                  activeView.model.set('content', html, { silent: true });
+                } catch (e) {}
+              }, 10);
+            }
+
+            // Update toolbar active states after a tick
+            if (typeof rte.updateActiveActions === 'function') {
+              setTimeout(() => rte.updateActiveActions(), 0);
+            }
+
+            return res;
+          };
+        }
+
+        rte._activeFormattedRichTextView = this;
+
+        // --- Track selection changes inside iframe ---
+        this.selectionChangeHandler = () => {
+          const sel = getCanvasSelection();
+          if (!sel || !sel.rangeCount) return;
+          const range = sel.getRangeAt(0);
+          if (this.el && this.el.contains(range.commonAncestorContainer)) {
+            rte._lastSelection = range.cloneRange();
+            if (typeof rte.updateActiveActions === 'function') {
+              setTimeout(() => rte.updateActiveActions(), 0);
+            }
+          }
+        };
+
+        const canvasDoc = editor.Canvas ? editor.Canvas.getDocument() : null;
+        if (canvasDoc) {
+          canvasDoc.addEventListener('selectionchange', this.selectionChangeHandler);
+        }
+
         this.rteChangeHandler = this.debounce(() => {
           const content = this.el.innerHTML;
           this.model.set('raw-content', content, { silent: true });
+          this.model.set('content', content, { silent: true });
         }, 150);
 
         this.el.addEventListener('input', this.rteChangeHandler);
@@ -1531,7 +1664,12 @@ function addFormattedRichTextComponent(editor) {
 
           const clickedOnToolbar = e.target.closest('.gjs-rte-toolbar') ||
             e.target.closest('.gjs-toolbar') ||
-            e.target.closest('.gjs-rte-actionbar');
+            e.target.closest('.gjs-rte-actionbar') ||
+            e.target.closest('.i_designer-rte-toolbar') ||
+            e.target.closest('.i_designer-rte-actionbar') ||
+            e.target.closest('.i_designer-rte-action') ||
+            e.target.closest('.rte-toolbar') ||
+            e.target.closest('.rte-actionbar');
 
           if (!clickedInside && !clickedOnToolbar) {
             this.handleRTEExit();
@@ -1643,6 +1781,21 @@ function addFormattedRichTextComponent(editor) {
           this.rtePasteHandler = null;
         }
 
+        // Clean up selectionchange listener
+        if (this.selectionChangeHandler) {
+          const canvasDoc = editor.Canvas ? editor.Canvas.getDocument() : null;
+          if (canvasDoc) {
+            canvasDoc.removeEventListener('selectionchange', this.selectionChangeHandler);
+          }
+          this.selectionChangeHandler = null;
+        }
+
+        // Clear active view reference and stored selection
+        rte._lastSelection = null;
+        if (rte._activeFormattedRichTextView === this) {
+          rte._activeFormattedRichTextView = null;
+        }
+
         if (this.globalClickHandler) {
           this.rteClickEnabled = false;
           const canvas = em.get('Canvas');
@@ -1670,27 +1823,8 @@ function addFormattedRichTextComponent(editor) {
           DL.error('RTE disable error:', e);
         }
 
-        // Restore original actions
-        if (this.originalActions) {
-          customRteActions.forEach(action => {
-            try {
-              rte.remove(action.name);
-            } catch (e) {
-              console.log('Error removing custom action:');
-            }
-          });
-
-          // Add back original actions
-          this.originalActions.forEach(action => {
-            try {
-              rte.add(action.name, action);
-            } catch (e) {
-              console.log('Error restoring action:');
-            }
-          });
-
-          this.originalActions = null;
-        }
+        // No action restoration needed — we use GrapesJS native actions
+        // and only strip extras on enable.
 
         if (this.rteTimeout) {
           clearTimeout(this.rteTimeout);
@@ -1742,11 +1876,23 @@ function addFormattedRichTextComponent(editor) {
             : /{[^{}]+}/.test(String(previousTemplateText || ''));
 
         if (typeof setComponentTemplateText === 'function') {
-          setComponentTemplateText(this.model, hasEditedTemplate ? content : '');
+          if (hasEditedTemplate) {
+            // User edited content and it still has placeholders — save it
+            setComponentTemplateText(this.model, content);
+          } else if (hadStoredTemplate) {
+            // Content no longer has placeholders (e.g. resolved by datasource)
+            // but there WAS a stored template — preserve it for bulk export
+            setComponentTemplateText(this.model, previousTemplateText);
+          }
+          // Otherwise: no template, don't set anything
         } else {
-          this.model.set('templateText', hasEditedTemplate ? content : '', { silent: true });
+          this.model.set('templateText',
+            hasEditedTemplate ? content : (hadStoredTemplate ? previousTemplateText : ''),
+            { silent: true }
+          );
         }
         this.model.set('raw-content', content, { silent: true });
+        this.model.set('content', content, { silent: true });
 
         // Validation and processing
         if (isFormulaEnabled) {
@@ -1809,13 +1955,27 @@ function addFormattedRichTextComponent(editor) {
           this.el.removeAttribute('data-formula');
         }
 
-        const content = this.model.get('content') || '';
-
         if (!this.rteActive) {
-          if (this.el.innerHTML !== content) {
-            this.el.innerHTML = content;
+          const defaultContent = 'Insert your text here';
+          const modelContent = this.model.get('content') || '';
+          const currentHtml = this.el.innerHTML || '';
+
+          // If model content is empty/default but DOM has imported content,
+          // adopt the DOM content into the model instead of wiping it.
+          const hasImportedHtml =
+            currentHtml &&
+            currentHtml !== defaultContent &&
+            !/^\s*Insert your text here\s*$/i.test(currentHtml);
+
+          if ((!modelContent || modelContent === defaultContent) && hasImportedHtml) {
+            this.model.set('content', currentHtml, { silent: true });
+            this.model.set('raw-content', currentHtml, { silent: true });
           }
-        } else {
+
+          const nextContent = this.model.get('content') || '';
+          if (this.el.innerHTML !== nextContent) {
+            this.el.innerHTML = nextContent;
+          }
         }
 
         this.el.style.wordWrap = 'break-word';

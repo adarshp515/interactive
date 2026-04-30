@@ -1,0 +1,661 @@
+{  
+   "english":{
+      "VI":[
+         {
+            "name":"Mr Sanket",
+            "address1":"Building",
+            "address2":"Road",
+            "address3":"Name, Landmark, Location, Ahmedabad, Gujrat, 387710",
+			"VI_NO":"2222274023",
+			"YourPlan":"625 plan_1000",
+			"BillCycleDate":"01-02-2026",
+			"InvoiceDate":"01-02-2026",
+			"BillPeriod":"05-01-2026 to 31-01-2026",
+			"InvoiceNo":"GJI0601600012568",
+			"AccountNo":"114329984",
+			"CreditLimit": "1,00,000.00",
+			"Security": "1,000.00",
+			"CustomerGSTNo": "0009876543",
+			
+			"PreviousBill":"Rs. 0.00",
+			"PaymentLastOneMonth":"Rs. 40.00",
+			"Adjustments":"Rs. -100.00",
+			"CurrentBillCharges":"Rs. 17,282.06",
+			"CurrentPayableAmount":"Rs. 17,142.06",
+			"PayableAfter":"82,642.06",
+			
+			"TotalDues":"₹17,142",
+			"DueDate":"15 days left",
+			"DateUsed":"7.8 GB",
+			"CallsMade":"79 Min"
+         }
+      ] ,  
+          "drilldown_pie_chart": { 
+        "series" : [ 
+          {
+            "name": "Browsers",
+            "colorByPoint": true,
+            "data": [
+                {
+                    "name": "Calls Usage",
+                    "y": 61.04,
+                    "drilldown": "CallsUsage"
+                  },
+                  {
+                    "name": "Data Usage",
+                    "y": 9.47,
+                    "drilldown": "DataUsage"
+                  },
+                  {
+                    "name": "Other",
+                    "y": 11.02,
+                    "drilldown": null
+                  } 
+          ]
+        }
+        ],
+        "drilldown": {
+        "series": [
+          {
+            "name": "Calls Usages",
+            "id": "CallsUsage",
+            "data": [
+              [
+                "Domestic Calls",
+                36.89
+              ],
+              [
+                "International Calls",
+                18.16
+              ]
+             
+            ]
+          },
+          {
+            "name": "Data Usage",
+            "id": "DataUsage",
+            "data": [
+             [
+                "Domestic Calls",
+                36.89
+              ],
+              [
+                "International Calls",
+                18.16
+              ]
+            ]
+          }
+        ]
+        }  
+      }, 
+      "pie_chart":{  
+        "series" : [{  
+              "data":  [{
+                 "name": "Plans ₹871", 
+                 "y": 999 
+              },
+              {
+                 "name": "Tax ₹154", 
+                 "y": 154
+              },
+              {
+                 "name": "Roaming ₹89", 
+                 "y": 89 
+              } ]
+        }
+        ] 
+      },
+	   "3D_column_chart":{ 
+       "xAxis": {
+          "categories": ["Jan", "Feb", "Mar", "Apr", "May"] 
+        },  
+        "series": [{
+          "name": "Year 1990",
+          "data": [631, 727, 3202, 721, 26]
+        }, {
+          "name": "Year 2000",
+          "data": [814, 841, 3714, 726, 31]
+        }, {
+          "name": "Year 2010",
+          "data": [1044, 944, 4170, 735, 40]
+        }, {
+          "name": "Year 2018",
+          "data": [1276, 1007, 4561, 746, 42]
+        }]  
+      },
+	   "drilldown_bar_chart":{
+          "series" : [ 
+            {
+              "name": "Browsers",
+              "colorByPoint": true,
+              "data": [
+                  {
+                      "name": "Highest Month",
+                      "y": 61.04,
+                      "drilldown": "highestMonth"
+                    },
+                    {
+                      "name": "Lowest Month",
+                      "y": 9.47,
+                      "drilldown": "lowestMonth"
+                    } 
+            ]
+          }
+          ],
+          "drilldown": {
+          "series": [
+            {
+              "name": "Highest Month",
+              "id": "highestMonth",
+              "data": [
+                [
+                  "v97.0",
+                  36.89
+                ],
+                [
+                  "v96.0",
+                  18.16
+                ],
+                [
+                  "v95.0",
+                  0.54
+                ],
+                [
+                  "v56.0",
+                  0.12
+                ],
+                [
+                  "v49.0",
+                  0.17
+                ]
+              ]
+            },
+            {
+              "name": "Lowest Month",
+              "id": "lowestMonth",
+              "data": [
+                [
+                  "v15.3",
+                  0.1
+                ],
+                [
+                  "v15.2",
+                  2.01
+                ],
+                [
+                  "v15.1",
+                  2.29
+                ],
+                [
+                  "v15.0",
+                  0.49
+                ],
+                [
+                  "v14.1",
+                  2.48
+                ],
+                [
+                  "v14.0",
+                  0.64
+                ],
+                [
+                  "v13.1",
+                  1.17
+                ],
+                [
+                  "v13.0",
+                  0.13
+                ],
+                [
+                  "v12.1",
+                  0.16
+                ]
+              ]
+            }
+          ]
+          } 
+      } ,      
+    "transactionTable1": {
+      "heading": {
+        "DATE_FORMAT": "Date",
+        "DESC": "Description",
+        "CREDIT": "Credit",
+        "DEBIT": "Debit",
+        "BALANCE": "Balance"
+      },
+      "data": [
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "1,851.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,12,415.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "LPN/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "MISC",
+          "CREDIT": "1,699.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,14,114.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "UPI/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "UPI",
+          "CREDIT": "0.00",
+          "DEBIT": "1,845.00",
+          "BALANCE": "1,12,269.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "2,125.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,14,394.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "IB/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "MISC",
+          "CREDIT": "1,557.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,15,951.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "UPI/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "UPI",
+          "CREDIT": "0.00",
+          "DEBIT": "2,482.00",
+          "BALANCE": "1,13,469.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ECOM/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "2,213.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,15,682.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ECOM/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "1,772.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,17,454.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "UDA/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "MISC",
+          "CREDIT": "0.00",
+          "DEBIT": "1,266.00",
+          "BALANCE": "1,16,188.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "0.00",
+          "DEBIT": "2,148.00",
+          "BALANCE": "1,14,040.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ADH/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "MISC",
+          "CREDIT": "2,473.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,16,513.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "UPI/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "UPI",
+          "CREDIT": "0.00",
+          "DEBIT": "2,421.00",
+          "BALANCE": "1,14,092.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "2,066.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,16,158.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ECOM/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "0.00",
+          "DEBIT": "1,979.00",
+          "BALANCE": "1,14,179.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "0.00",
+          "DEBIT": "1,332.00",
+          "BALANCE": "1,12,847.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ECOM/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "1,736.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,14,583.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "2,203.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,16,786.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ECOM/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "1,979.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,18,765.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "UPI/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "UPI",
+          "CREDIT": "1,952.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,20,717.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "UPI/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "UPI",
+          "CREDIT": "0.00",
+          "DEBIT": "1,910.00",
+          "BALANCE": "1,18,807.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "UPI/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "UPI",
+          "CREDIT": "0.00",
+          "DEBIT": "2,063.00",
+          "BALANCE": "1,16,744.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ECOM/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "0.00",
+          "DEBIT": "1,089.00",
+          "BALANCE": "1,15,655.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "OPENING BALANCE",
+          "ICON": "MISC",
+          "CREDIT": "0.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,13,186.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ECOM/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "2,265.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,15,451.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "LPN/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "MISC",
+          "CREDIT": "1,906.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,17,357.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "1,986.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,19,343.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ECOM/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "1,590.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,20,933.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "UPI/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "UPI",
+          "CREDIT": "0.00",
+          "DEBIT": "1,834.00",
+          "BALANCE": "1,19,099.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "0.00",
+          "DEBIT": "1,033.00",
+          "BALANCE": "1,18,066.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ECOM/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "1,280.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,19,346.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ECOM/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "0.00",
+          "DEBIT": "1,076.00",
+          "BALANCE": "1,18,270.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "0.00",
+          "DEBIT": "1,439.00",
+          "BALANCE": "1,16,831.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "1,911.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,18,742.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "LPN/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "MISC",
+          "CREDIT": "1,674.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,20,416.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "UPI/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "UPI",
+          "CREDIT": "1,002.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,21,418.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "0.00",
+          "DEBIT": "1,892.00",
+          "BALANCE": "1,19,526.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "IB/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "MISC",
+          "CREDIT": "0.00",
+          "DEBIT": "1,427.00",
+          "BALANCE": "1,18,099.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "UPI/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "UPI",
+          "CREDIT": "1,464.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,19,563.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ECOM/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "1,395.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,20,958.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ECOM/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "2,340.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,23,298.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "UDA/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "MISC",
+          "CREDIT": "1,108.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,24,406.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "1,363.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,25,769.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ADH/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "MISC",
+          "CREDIT": "0.00",
+          "DEBIT": "1,690.00",
+          "BALANCE": "1,24,079.00"
+        }
+     
+      ]
+    }  
+   }
+   }
