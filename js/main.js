@@ -198,10 +198,21 @@ let pageManager = null;
 let pageSetupManager = null;
 
 editor.on("load", () => {
+  let pageManagerRetryCount = 0;
   const waitForPageManager = () => {
-    pageManager = editor.Pages || editor.get?.("Pages") || editor.Plugins?.get?.("page-manager-component");
+    pageManager =
+      editor.Pages ||
+      editor.get?.("Pages") ||
+      editor.get?.("PageManager") ||
+      editor.Plugins?.get?.("page-manager-component") ||
+      editor.Plugins?.get?.("PageManager");
 
     if (!pageManager) {
+      pageManagerRetryCount += 1;
+      if (pageManagerRetryCount >= 10) {
+        console.warn("PageManager plugin not available. Page setup features are disabled.");
+        return;
+      }
       setTimeout(waitForPageManager, 300);
       return;
     }
@@ -521,7 +532,7 @@ function getHtmlWithCurrentFormState(editor) {
         }
 
         const attrs = component.getAttributes ? component.getAttributes() : {};
-        ["my-input-json", "data-json-file-index", "data-gjs-type", "data-i_designer-type"].forEach((attrName) => {
+        ["my-input-json", "data-json-file-index", "data-gjs-type", "data-i_designer-type", "data-i_designer-highlightable"].forEach((attrName) => {
           const attrValue = attrs[attrName];
           if (attrValue != null && String(attrValue) !== "") {
             exportNode.setAttribute(attrName, String(attrValue));
@@ -547,6 +558,7 @@ function getHtmlWithCurrentFormState(editor) {
         "data-json-file-index",
         "data-gjs-type",
         "data-i_designer-type",
+        "data-i_designer-highlightable",
       ].forEach((attrName) => {
         if (liveNode.hasAttribute(attrName)) {
           exportNode.setAttribute(attrName, liveNode.getAttribute(attrName) || "");
@@ -590,6 +602,7 @@ function getHtmlWithCurrentFormState(editor) {
           "data-json-file-index",
           "data-gjs-type",
           "data-i_designer-type",
+          "data-i_designer-highlightable",
         ].forEach((attrName) => {
           if (liveNode.hasAttribute(attrName)) {
             matchedNode.setAttribute(attrName, liveNode.getAttribute(attrName) || "");
@@ -832,6 +845,216 @@ function getTemplateAwareBindingIdSet(editor) {
   }
 
   return ids;
+}
+
+function normalizeBulkDatasourceFileName(fileName, fallbackName = "common_json.json") {
+  const trimmedFileName = String(fileName || "").trim();
+  if (!trimmedFileName) return fallbackName;
+
+  return /\.(json|xml)$/i.test(trimmedFileName)
+    ? trimmedFileName
+    : `${trimmedFileName}.json`;
+}
+
+function isBulkModalJsonContent(content) {
+  if (typeof content !== "string" || !content.trim()) return false;
+
+  try {
+    const parsed = JSON.parse(content);
+    return typeof parsed === "object" && parsed !== null;
+  } catch (err) {
+    return false;
+  }
+}
+
+function loadStoredDatasourceFilesForBulkModal() {
+  const files = [];
+  const seenStorageKeys = new Set();
+  const seenSignatures = new Set();
+  const storedFileNames =
+    typeof getStoredJsonFileNames === "function" ? getStoredJsonFileNames() : [];
+
+  const activeFileName = normalizeBulkDatasourceFileName(
+    localStorage.getItem("common_json_file_name"),
+    ""
+  );
+
+  const candidateFileNames = new Set();
+  if (activeFileName) candidateFileNames.add(activeFileName);
+
+  storedFileNames.forEach((fileName) => {
+    if (!fileName) return;
+    const normalizedName = normalizeBulkDatasourceFileName(fileName);
+    candidateFileNames.add(fileName);
+    candidateFileNames.add(normalizedName);
+  });
+
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (!key || key === "common_json" || key === "common_json_files") continue;
+    if (!key.startsWith("common_json_")) continue;
+    const rawName = key.replace(/^common_json_/, "");
+    candidateFileNames.add(rawName);
+    candidateFileNames.add(normalizeBulkDatasourceFileName(rawName));
+  }
+
+  const addDatasourceFile = (storageKey, name) => {
+    if (seenStorageKeys.has(storageKey)) return;
+    const content = localStorage.getItem(storageKey);
+    if (!isBulkModalJsonContent(content)) return;
+
+    const normalizedName = normalizeBulkDatasourceFileName(name);
+    const signature = `${normalizedName}::${content}`;
+    if (seenSignatures.has(signature)) return;
+
+    seenStorageKeys.add(storageKey);
+    seenSignatures.add(signature);
+    files.push({
+      name: normalizedName,
+      content,
+      fromLocal: true,
+      storageKey,
+      parsedData: JSON.parse(content),
+    });
+  };
+
+  Array.from(candidateFileNames).forEach((fileName) => {
+    if (!fileName) return;
+    const normalizedName = normalizeBulkDatasourceFileName(fileName);
+    const possibleKeys = [
+      `common_json_${fileName}`,
+      `common_json_${normalizedName}`,
+    ];
+
+    const storageKey = possibleKeys.find((key) => localStorage.getItem(key) != null);
+    if (!storageKey) return;
+
+    addDatasourceFile(storageKey, normalizedName);
+  });
+
+  const commonJsonContent = localStorage.getItem("common_json");
+  if (isBulkModalJsonContent(commonJsonContent)) {
+    const commonJsonName = normalizeBulkDatasourceFileName(
+      localStorage.getItem("common_json_file_name"),
+      "common_json.json"
+    );
+    addDatasourceFile("common_json", commonJsonName);
+  }
+
+  return files;
+}
+
+function getSavedDatasourceFilesForPageExport() {
+  const fileMap = new Map();
+  const addFile = (file) => {
+    if (!file || !file.name || !file.content) return;
+    const normalizedName = normalizeBulkDatasourceFileName(file.name);
+    if (fileMap.has(normalizedName)) return;
+    if (String(file.name || "").toLowerCase().includes("__i_designer_template_values")) return;
+    fileMap.set(normalizedName, { ...file, name: normalizedName });
+  };
+
+  if (Array.isArray(uploadedJsonFiles)) {
+    uploadedJsonFiles.forEach(addFile);
+  }
+
+  const storedFiles = loadStoredDatasourceFilesForBulkModal() || [];
+  storedFiles.forEach(addFile);
+
+  return Array.from(fileMap.values());
+}
+
+function buildSavedPageJsonAttachmentScript(jsonFiles) {
+  if (!Array.isArray(jsonFiles) || !jsonFiles.length) return "";
+  const payload = {
+    savedJsonFiles: jsonFiles.map((file) => ({
+      name: String(file.name || ""),
+      content: String(file.content || ""),
+    })),
+  };
+
+  const jsonPayload = JSON.stringify(payload);
+  console.log("Embedding JSON attachments for export:", payload);
+
+  return `<script type="application/json" id="interactive-designer-json-files">${jsonPayload}</script>
+      <script id="interactive-designer-json-files-loader">(function(){
+        try {
+          var jsonScript = document.getElementById('interactive-designer-json-files');
+          if (!jsonScript) return;
+          var payload = JSON.parse(jsonScript.textContent || '{}');
+          if (!payload || !Array.isArray(payload.savedJsonFiles)) return;
+          window.__BULK_EXPORT_JSON__ = [];
+          var extraNames = [];
+          payload.savedJsonFiles.forEach(function(file, index) {
+            if (!file || typeof file.content !== 'string') return;
+            try {
+              var parsed = JSON.parse(file.content);
+              window.__BULK_EXPORT_JSON__.push(parsed);
+            } catch (err) {
+              window.__BULK_EXPORT_JSON__.push({});
+            }
+            if (index === 0) {
+              localStorage.setItem('common_json', file.content);
+              if (file.name) {
+                localStorage.setItem('common_json_file_name', file.name);
+              }
+            } else if (file.name) {
+              localStorage.setItem('common_json_' + file.name, file.content);
+              extraNames.push(file.name);
+            }
+          });
+          if (extraNames.length) {
+            localStorage.setItem('common_json_files', extraNames.join(', '));
+          }
+        } catch (err) {
+          console.warn('Failed to restore embedded JSON attachments:', err);
+        }
+      })();</script>`;
+}
+
+function restoreSavedPageJsonAttachments(parsedDoc) {
+  if (!parsedDoc || typeof parsedDoc.getElementById !== 'function') return;
+  const jsonScript = parsedDoc.getElementById('interactive-designer-json-files');
+  if (!jsonScript) return;
+  let payload;
+  try {
+    payload = JSON.parse(jsonScript.textContent || '{}');
+  } catch (err) {
+    console.warn('Failed to parse JSON attachments from imported page:', err);
+    jsonScript.remove();
+    return;
+  }
+
+  if (!payload || !Array.isArray(payload.savedJsonFiles)) {
+    jsonScript.remove();
+    const loaderScript = parsedDoc.getElementById('interactive-designer-json-files-loader');
+    if (loaderScript) loaderScript.remove();
+    return;
+  }
+
+  const extraNames = [];
+  payload.savedJsonFiles.forEach(function(file, index) {
+    if (!file || typeof file.content !== 'string') return;
+    try {
+      if (index === 0) {
+        localStorage.setItem('common_json', file.content);
+        if (file.name) localStorage.setItem('common_json_file_name', file.name);
+      } else if (file.name) {
+        localStorage.setItem('common_json_' + file.name, file.content);
+        extraNames.push(file.name);
+      }
+    } catch (err) {
+      console.warn('Failed to restore imported JSON file:', file.name, err);
+    }
+  });
+
+  if (extraNames.length) {
+    localStorage.setItem('common_json_files', extraNames.join(', '));
+  }
+
+  jsonScript.remove();
+  const loaderScript = parsedDoc.getElementById('interactive-designer-json-files-loader');
+  if (loaderScript) loaderScript.remove();
 }
 
 editor.Commands.add("open-modal", {
@@ -1119,85 +1342,6 @@ editor.Commands.add("open-modal", {
       e.target.value = "";
     });
 
-    function normalizeBulkDatasourceFileName(fileName, fallbackName = "common_json.json") {
-      const trimmedFileName = String(fileName || "").trim();
-      if (!trimmedFileName) return fallbackName;
-
-      return /\.(json|xml)$/i.test(trimmedFileName)
-        ? trimmedFileName
-        : `${trimmedFileName}.json`;
-    }
-
-    function isBulkModalJsonContent(content) {
-      if (typeof content !== "string" || !content.trim()) return false;
-
-      try {
-        const parsed = JSON.parse(content);
-        return typeof parsed === "object" && parsed !== null;
-      } catch (err) {
-        return false;
-      }
-    }
-
-    function loadStoredDatasourceFilesForBulkModal() {
-      const files = [];
-      const seenStorageKeys = new Set();
-      const storedFileNames =
-        typeof getStoredJsonFileNames === "function" ? getStoredJsonFileNames() : [];
-
-      storedFileNames.forEach((fileName) => {
-        if (String(fileName || "").toLowerCase().includes("__i_designer_template_values")) {
-          return;
-        }
-
-        const normalizedName = normalizeBulkDatasourceFileName(fileName);
-        const possibleKeys = [
-          `common_json_${fileName}`,
-          `common_json_${normalizedName}`,
-        ];
-
-        const storageKey = possibleKeys.find((key) => {
-          return !seenStorageKeys.has(key) && localStorage.getItem(key) != null;
-        });
-
-        if (!storageKey) return;
-
-        const content = localStorage.getItem(storageKey);
-        if (!isBulkModalJsonContent(content)) return;
-
-        files.push({
-          name: normalizedName,
-          content,
-          fromLocal: true,
-          storageKey,
-          parsedData: JSON.parse(content),
-        });
-        seenStorageKeys.add(storageKey);
-      });
-
-      if (files.length) {
-        return files;
-      }
-
-      const commonJsonContent = localStorage.getItem("common_json");
-      if (!isBulkModalJsonContent(commonJsonContent)) {
-        return files;
-      }
-
-      files.push({
-        name: normalizeBulkDatasourceFileName(
-          localStorage.getItem("common_json_file_name"),
-          "common_json.json"
-        ),
-        content: commonJsonContent,
-        fromLocal: true,
-        storageKey: "common_json",
-        parsedData: JSON.parse(commonJsonContent),
-      });
-
-      return files;
-    }
-
     function getMergedUploadedJsonData() {
       const mergedJson = {};
 
@@ -1459,10 +1603,14 @@ editor.Commands.add("open-modal", {
           if (!nodeText) return false;
 
           const jsonFileIndex = String(targetNode.getAttribute("data-json-file-index") || "0").trim() || "0";
-          const commonJson = getJsonDataByFileIndex(jsonFileIndex);
-          if (!commonJson) return false;
+          const resolution = resolveDatasourceValuesWithFileIndexFallback([bindingPath], jsonFileIndex);
+          if (!resolution) return false;
 
-          const resolvedValue = resolveValueFromDatasource(commonJson, bindingPath);
+          if (resolution.fileIndex !== jsonFileIndex) {
+            targetNode.setAttribute("data-json-file-index", String(resolution.fileIndex));
+          }
+
+          const resolvedValue = resolution.valuesByPath.get(bindingPath);
           if (resolvedValue === undefined || resolvedValue === null) return false;
 
           const resolvedText = String(resolvedValue).trim();
@@ -1486,10 +1634,11 @@ editor.Commands.add("open-modal", {
           );
 
           const jsonFileIndex = String(targetNode.getAttribute("data-json-file-index") || "0").trim() || "0";
-          const commonJson = getJsonDataByFileIndex(jsonFileIndex);
-          const resolvedValue = commonJson
-            ? resolveValueFromDatasource(commonJson, bindingPath)
-            : undefined;
+          const resolution = resolveDatasourceValuesWithFileIndexFallback([bindingPath], jsonFileIndex);
+          const resolvedValue = resolution ? resolution.valuesByPath.get(bindingPath) : undefined;
+          if (resolution && resolution.fileIndex !== jsonFileIndex) {
+            targetNode.setAttribute("data-json-file-index", String(resolution.fileIndex));
+          }
           const resolvedText = resolvedValue == null ? "" : String(resolvedValue).trim();
 
           if (!hasDatasourceTemplatePlaceholders(templateText)) {
@@ -1705,14 +1854,26 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
       ? `${API_BASE_URL}/uploadPdf`
       : `${API_BASE_URL}/uploadHtml`;
 
-  const activeUploadedJsonFiles = Array.isArray(uploadedJsonFiles)
-    ? uploadedJsonFiles.filter((file) =>
-      file &&
-      String(file.name || "").trim() &&
-      String(file.content || "").trim() &&
-      !String(file.name || "").toLowerCase().includes("__i_designer_template_values")
-    )
-    : [];
+  const localStoredJsonFiles = loadStoredDatasourceFilesForBulkModal() || [];
+  const fileMap = new Map();
+
+  const addJsonFile = (file) => {
+    if (!file || !file.name || !file.content) return;
+    const normalizedName = normalizeBulkDatasourceFileName(file.name);
+    if (fileMap.has(normalizedName)) return;
+    if (String(file.name || "").toLowerCase().includes("__i_designer_template_values")) return;
+    fileMap.set(normalizedName, { ...file, name: normalizedName });
+  };
+
+  (Array.isArray(uploadedJsonFiles) ? uploadedJsonFiles : []).forEach(addJsonFile);
+  localStoredJsonFiles.forEach(addJsonFile);
+
+  const activeUploadedJsonFiles = Array.from(fileMap.values()).filter((file) =>
+    file &&
+    String(file.name || "").trim() &&
+    String(file.content || "").trim() &&
+    !String(file.name || "").toLowerCase().includes("__i_designer_template_values")
+  );
 
   if (!activeUploadedJsonFiles.length) {
     throw new Error("Please upload at least one JSON/XML datasource file before bulk export.");
@@ -2248,18 +2409,34 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
           return current;
         }
 
-        function getCurrentJsonObject() {
-          if (window.__BULK_EXPORT_JSON__ && typeof window.__BULK_EXPORT_JSON__ === 'object') {
+        function getJsonDataArray() {
+          if (Array.isArray(window.__BULK_EXPORT_JSON__)) {
             return window.__BULK_EXPORT_JSON__;
           }
-          if (Array.isArray(window.jsonData1) && window.jsonData1[0]) {
-            return window.jsonData1[0];
+          if (Array.isArray(window.jsonData1) && window.jsonData1.length) {
+            return window.jsonData1;
           }
+
           try {
-            return JSON.parse(localStorage.getItem('common_json') || '{}');
+            return [JSON.parse(localStorage.getItem('common_json') || '{}')];
           } catch (err) {
-            return {};
+            return [{}];
           }
+        }
+
+        function getCurrentJsonObject(node) {
+          var jsonArray = getJsonDataArray();
+          if (!node || typeof node.getAttribute !== 'function') {
+            return jsonArray[0] || {};
+          }
+
+          var indexValue = node.getAttribute('data-json-file-index') || node.getAttribute('data-json-file-index');
+          var parsedIndex = parseInt(String(indexValue || '0').trim(), 10);
+          if (!isNaN(parsedIndex) && parsedIndex >= 0 && parsedIndex < jsonArray.length) {
+            return jsonArray[parsedIndex] || {};
+          }
+
+          return jsonArray[0] || {};
         }
 
         function resolveFromAnyLanguage(jsonObject, pathExpression, selectedLanguage) {
@@ -2352,9 +2529,9 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
         }
 
         function applyTextBindingValues() {
-          var jsonObject = getCurrentJsonObject();
-
           document.querySelectorAll('[my-input-json]').forEach(function(node) {
+            var jsonObject = getCurrentJsonObject(node);
+
             if (!node || /^(SCRIPT|STYLE|LINK|META)$/i.test(node.tagName || '')) return;
             if (node.closest && node.closest('[data-watermark-json-path]')) return;
 
@@ -2409,8 +2586,8 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
         }
 
         function applyWatermarkValues() {
-          var jsonObject = getCurrentJsonObject();
           document.querySelectorAll('[data-watermark-json-path]').forEach(function(node) {
+            var jsonObject = getCurrentJsonObject(node);
             var pathExpression = node.getAttribute('data-watermark-json-path') || '';
             var selectedLanguage = node.getAttribute('data-watermark-json-language') || '';
             var value = resolveFromAnyLanguage(jsonObject, pathExpression, selectedLanguage);
@@ -2607,6 +2784,10 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
   overlay.appendChild(spinner);
   overlay.appendChild(overlayText);
   document.body.appendChild(overlay);
+
+  console.log("[bulk-export] exportType:", exportType);
+  console.log("[bulk-export] payload mappings:", inputJsonMappings);
+  console.log("[bulk-export] uploaded files:", activeUploadedJsonFiles.map((f) => ({ name: f.name, fromLocal: f.fromLocal })));
 
   try {
     const response = await fetch(apiUrl, { method: "POST", body: formData });
@@ -4556,13 +4737,21 @@ function extractSavedPageImportPayload(rawHtml) {
     settingsScript.remove();
   }
 
+  restoreSavedPageJsonAttachments(parsedDoc);
+
   const cssText = Array.from(parsedDoc.querySelectorAll("head style"))
     .map((styleTag) => styleTag.textContent || "")
     .join("\n");
 
-  const bodyHtml = parsedDoc.body && parsedDoc.body.innerHTML
+  let bodyHtml = parsedDoc.body && parsedDoc.body.innerHTML
     ? parsedDoc.body.innerHTML
-    : String(rawHtml || "");
+    : "";
+
+  if (!bodyHtml.trim()) {
+    bodyHtml = parsedDoc.documentElement && parsedDoc.documentElement.innerHTML
+      ? parsedDoc.documentElement.innerHTML
+      : String(rawHtml || "");
+  }
 
   return {
     bodyHtml,
@@ -4595,7 +4784,8 @@ function applyImportedSinglePage(rawHtml, reason = "import-single-page", options
     editor.setStyle(cssText);
   }
 
-  editor.setComponents(bodyHtml || rawHtml);
+  const loadHtml = (bodyHtml && bodyHtml.trim()) ? bodyHtml : rawHtml;
+  editor.setComponents(loadHtml);
   window.setTimeout(() => {
     try {
       const wrapper = editor.getWrapper && editor.getWrapper();
@@ -4614,6 +4804,30 @@ function applyImportedSinglePage(rawHtml, reason = "import-single-page", options
           const attrs = component.getAttributes ? component.getAttributes() : {};
           if (attrs["data-template-text"] && typeof setComponentTemplateText === "function") {
             setComponentTemplateText(component, decodeDatasourceTemplateText(attrs["data-template-text"]));
+          }
+
+          if (component.set) {
+            if (attrs["my-input-json"]) {
+              component.set("my-input-json", String(attrs["my-input-json"] || ""), { silent: true });
+            }
+            if (attrs["data-json-file-index"]) {
+              component.set("json-file-index", String(attrs["data-json-file-index"] || ""), { silent: true });
+            }
+          }
+
+          if (component.addAttributes) {
+            [
+              "my-input-json",
+              "data-json-file-index",
+              "data-template-text",
+              "data-i_designer-highlightable",
+              "data-i_designer-type"
+            ].forEach((attrName) => {
+              const attrValue = attrs[attrName];
+              if (attrValue != null && String(attrValue) !== "") {
+                component.addAttributes({ [attrName]: String(attrValue) });
+              }
+            });
           }
         });
       }
@@ -4716,6 +4930,12 @@ function downloadPage() {
         }
     </script>` +
     "</html>";
+
+  const jsonAttachmentScript = buildSavedPageJsonAttachmentScript(getSavedDatasourceFilesForPageExport());
+  if (jsonAttachmentScript) {
+    htmlContent = htmlContent.replace("</html>", jsonAttachmentScript + "</html>");
+  }
+
   sessionStorage.setItem('single-page', JSON.stringify(htmlContent));
   var blob = new Blob([htmlContent], { type: "text/html;charset=utf-8" });
   var url = URL.createObjectURL(blob);
@@ -5079,6 +5299,8 @@ function setComponentTemplateText(component, templateText) {
     }
     if (component.removeAttributes) {
       component.removeAttributes("data-template-text");
+    } else if (component.view && component.view.el) {
+      component.view.el.removeAttribute("data-template-text");
     }
     return "";
   }
@@ -5086,10 +5308,18 @@ function setComponentTemplateText(component, templateText) {
   if (component.set) {
     component.set("templateText", normalizedTemplate, { silent: true });
   }
+
+  const encodedTemplate = encodeDatasourceTemplateText(normalizedTemplate);
   if (component.addAttributes) {
     component.addAttributes({
-      "data-template-text": encodeDatasourceTemplateText(normalizedTemplate),
+      "data-template-text": encodedTemplate,
     });
+  } else if (component.setAttributes) {
+    component.setAttributes({
+      "data-template-text": encodedTemplate,
+    });
+  } else if (component.view && component.view.el) {
+    component.view.el.setAttribute("data-template-text", encodedTemplate);
   }
 
   return normalizedTemplate;
@@ -5206,6 +5436,42 @@ function getPlaceholderTokenFromPath(commonJson, fullPath) {
   return getPlaceholderTokensFromPath(commonJson, fullPath)[0] || "";
 }
 
+function resolveDatasourceValuesWithFileIndexFallback(jsonPaths, preferredIndex) {
+  const normalizedPreferred = String(preferredIndex == null ? "0" : preferredIndex).trim() || "0";
+
+  const tryIndex = (index) => {
+    const jsonData = getJsonDataByFileIndex(index);
+    if (!jsonData) return null;
+
+    const valuesByPath = new Map();
+    jsonPaths.forEach((path) => {
+      const value = resolveValueFromDatasource(jsonData, path);
+      if (value !== undefined && value !== null) {
+        valuesByPath.set(path, value);
+      }
+    });
+
+    if (!valuesByPath.size) return null;
+
+    return { jsonData, fileIndex: index, valuesByPath };
+  };
+
+  let resolution = tryIndex(normalizedPreferred);
+  if (resolution) return resolution;
+
+  const storedNames = getStoredJsonFileNames();
+  const maxIndex = storedNames.length;
+
+  for (let i = 0; i <= maxIndex; i += 1) {
+    const index = String(i);
+    if (index === normalizedPreferred) continue;
+    resolution = tryIndex(index);
+    if (resolution) return resolution;
+  }
+
+  return null;
+}
+
 function resolveDataBoundExportContent(liveNode) {
   const templateText = decodeDatasourceTemplateText(
     liveNode.getAttribute("data-template-text") || ""
@@ -5219,26 +5485,28 @@ function resolveDataBoundExportContent(liveNode) {
     return null;
   }
 
-  const commonJson = getJsonDataByFileIndex(fileIndex);
-  if (!commonJson) {
-    console.debug('[Export] no commonJson available for fileIndex', { fileIndex });
-  }
-  if (!commonJson) {
-    return null;
-  }
-
   const jsonPaths = jsonPath.split(",").map((path) => path.trim()).filter(Boolean);
   if (!jsonPaths.length) {
     return null;
   }
 
+  const resolution = resolveDatasourceValuesWithFileIndexFallback(jsonPaths, fileIndex);
+  if (!resolution) {
+    console.debug('[Export] no datasource match for jsonPath', { jsonPath, fileIndex });
+    return null;
+  }
+
+  if (resolution.fileIndex !== fileIndex) {
+    liveNode.setAttribute("data-json-file-index", String(resolution.fileIndex));
+  }
+
   let renderedContent = templateText;
 
   jsonPaths.forEach((path) => {
-    const resolvedValue = resolveValueFromDatasource(commonJson, path);
+    const resolvedValue = resolution.valuesByPath.get(path);
     if (resolvedValue === undefined || resolvedValue === null) return;
 
-    const placeholderTokens = getPlaceholderTokensFromPath(commonJson, path);
+    const placeholderTokens = getPlaceholderTokensFromPath(resolution.jsonData, path);
     if (!placeholderTokens.length) return;
 
     placeholderTokens.forEach((placeholderToken) => {
@@ -5541,8 +5809,8 @@ editor.on("rte:enable", (view) => {
 
   if (view.el) {
     const currentHtml = view.el.innerHTML || "";
-    const isDefaultHtml = !currentHtml || /Insert your text here/i.test(currentHtml);
-    const shouldRestoreTemplate = isDefaultHtml;
+    const currentHasTemplate = hasDatasourceTemplatePlaceholders(currentHtml);
+    const shouldRestoreTemplate = hasDatasourceTemplatePlaceholders(templateText) && !currentHasTemplate;
 
     if (shouldRestoreTemplate) {
       view.el.innerHTML = templateText;

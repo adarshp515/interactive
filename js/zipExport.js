@@ -8489,30 +8489,36 @@ window.addEventListener('load', function() {
                   slideshowSettings = null;
                 }
 
-                var htmlContent = editor.getHtml();
-                try {
-                  var htmlTempDiv = document.createElement('div');
-                  htmlTempDiv.innerHTML = htmlContent;
-                  var frameEl = editor.Canvas && editor.Canvas.getFrameEl ? editor.Canvas.getFrameEl() : null;
-                  var liveDoc = frameEl && (frameEl.contentDocument || (frameEl.contentWindow && frameEl.contentWindow.document));
-                  if (liveDoc && liveDoc.body) {
-                    var liveChecks = liveDoc.body.querySelectorAll('input[type="checkbox"], input[type="radio"]');
-                    var exportChecks = htmlTempDiv.querySelectorAll('input[type="checkbox"], input[type="radio"]');
-                    var checksLen = Math.min(liveChecks.length, exportChecks.length);
-                    for (var ci = 0; ci < checksLen; ci++) {
-                      if (liveChecks[ci].checked) {
-                        exportChecks[ci].setAttribute('checked', 'checked');
-                      } else {
-                        exportChecks[ci].removeAttribute('checked');
+                var htmlContent =
+                  typeof getHtmlWithCurrentFormState === 'function'
+                    ? getHtmlWithCurrentFormState(editor)
+                    : editor.getHtml();
+
+                if (typeof getHtmlWithCurrentFormState !== 'function') {
+                  try {
+                    var htmlTempDiv = document.createElement('div');
+                    htmlTempDiv.innerHTML = htmlContent;
+                    var frameEl = editor.Canvas && editor.Canvas.getFrameEl ? editor.Canvas.getFrameEl() : null;
+                    var liveDoc = frameEl && (frameEl.contentDocument || (frameEl.contentWindow && frameEl.contentWindow.document));
+                    if (liveDoc && liveDoc.body) {
+                      var liveChecks = liveDoc.body.querySelectorAll('input[type="checkbox"], input[type="radio"]');
+                      var exportChecks = htmlTempDiv.querySelectorAll('input[type="checkbox"], input[type="radio"]');
+                      var checksLen = Math.min(liveChecks.length, exportChecks.length);
+                      for (var ci = 0; ci < checksLen; ci++) {
+                        if (liveChecks[ci].checked) {
+                          exportChecks[ci].setAttribute('checked', 'checked');
+                        } else {
+                          exportChecks[ci].removeAttribute('checked');
+                        }
                       }
+                      if (typeof restoreTemplateAwareTextForBulkExport === 'function') {
+                        restoreTemplateAwareTextForBulkExport(htmlTempDiv);
+                      }
+                      htmlContent = htmlTempDiv.innerHTML;
                     }
-                    if (typeof restoreTemplateAwareTextForBulkExport === 'function') {
-                      restoreTemplateAwareTextForBulkExport(htmlTempDiv);
-                    }
-                    htmlContent = htmlTempDiv.innerHTML;
+                  } catch (syncErr) {
+                    console.warn('⚠️ Checkbox sync failed before template save:', syncErr);
                   }
-                } catch (syncErr) {
-                  console.warn('⚠️ Checkbox sync failed before template save:', syncErr);
                 }
 
                 htmlContent = htmlContent.replace(
@@ -8521,6 +8527,18 @@ window.addEventListener('load', function() {
                 );
 
                 var cssContent = editor.getCss();
+                var slideshowSettingsScript =
+                  typeof buildInteractiveSlideshowSettingsScript === 'function'
+                    ? buildInteractiveSlideshowSettingsScript()
+                    : '';
+                var jsonAttachmentScript =
+                  typeof buildSavedPageJsonAttachmentScript === 'function'
+                    ? buildSavedPageJsonAttachmentScript(
+                        typeof getSavedDatasourceFilesForPageExport === 'function'
+                          ? getSavedDatasourceFilesForPageExport()
+                          : []
+                      )
+                    : '';
 
                 var downloadableHtml = `<!doctype html><html lang="en"><head>
                   <meta charset="utf-8">
@@ -8535,21 +8553,58 @@ window.addEventListener('load', function() {
                   <script>${editor.getJs()}</script>
                   </body></html>`;
 
-                var editableHtml = `<html><head><style>${cssContent}</style></head>
-                  ${htmlContent}
-                  <script>
-                  var jsonData1 = ${exportedJsonData};
-                  ${pageSetupSettings ? `
-                  window.pageSetupSettings = ${JSON.stringify(pageSetupSettings)};
-                  ` : ``}
-                  ${slideshowSettings ? `
-                  window.slideshowSettings = ${JSON.stringify(slideshowSettings)};
-                  ` : ``}
-                  </script>
-                  <script src="https://code.highcharts.com/highcharts-3d.js"></script>
-                  <script src="https://code.highcharts.com/highcharts-more.js"></script>
-                  <script>${editor.getJs()}</script>
-                  </html>`;
+                var editableHtml =
+                  "<html><head><style>" +
+                  cssContent + `  .navbar-div .hamburger-menu { display: none !important;  text-align: right;
+      font-size: 30px; padding: 10px; color: #472e90; cursor: pointer;
+    }  @media (max-width: 991px) {  .navbar-div .hamburger-menu { display: block !important; }
+      .navbar-div .tab-container, .navbar-div .tab{ width:99%; text-align:center; }
+     .navbar-div .tab-container{display:none}
+    } 
+    @media (max-width: 767px){ .navbar-div .hamburger-menu {   display: block !important; }
+     .navbar-div .tab-container, .navbar-div .tab{
+       width:98%; } 
+    .navbar-div .tab-container{display:none}
+    }` +
+                  "</style></head>" +
+                  htmlContent +
+                  slideshowSettingsScript + `<script>
+    var hamburgerMenu = document.getElementById("hamburgerMenu"); 
+        if(hamburgerMenu !==null){
+          var tabContainer = document.querySelector(".tab-container");  
+          hamburgerMenu.addEventListener("click", function() {
+              if (tabContainer.style.display === "block") {
+                tabContainer.style.display = "none";
+              } else {
+                tabContainer.style.display = "block";
+              }
+            });   
+          function  updateView(){   
+            const viewportWidth = Math.max(document.documentElement.clientWidth, window.innerWidth || 0); 
+            const tabContainer = document.querySelector(".tab-container");  
+            if (viewportWidth >= 991) {  
+              tabContainer.style.display = "block";
+            } else{
+              tabContainer.style.display = "none";
+            } 
+          }  
+          window.addEventListener('resize', updateView); 
+        }
+    </script>` +
+                  "</html>";
+
+                if (pageSetupSettings) {
+                  editableHtml = editableHtml.replace(
+                    "</html>",
+                    "<script>window.pageSetupSettings = " +
+                      JSON.stringify(pageSetupSettings) +
+                      ";</script></html>",
+                  );
+                }
+
+                if (jsonAttachmentScript) {
+                  editableHtml = editableHtml.replace("</html>", jsonAttachmentScript + "</html>");
+                }
 
                 // Check localStorage for edit mode
                 const editTemplateId = localStorage.getItem('editTemplateId');

@@ -198,10 +198,21 @@ let pageManager = null;
 let pageSetupManager = null;
 
 editor.on("load", () => {
+  let pageManagerRetryCount = 0;
   const waitForPageManager = () => {
-    pageManager = editor.Pages || editor.get?.("Pages") || editor.Plugins?.get?.("page-manager-component");
+    pageManager =
+      editor.Pages ||
+      editor.get?.("Pages") ||
+      editor.get?.("PageManager") ||
+      editor.Plugins?.get?.("page-manager-component") ||
+      editor.Plugins?.get?.("PageManager");
 
     if (!pageManager) {
+      pageManagerRetryCount += 1;
+      if (pageManagerRetryCount >= 10) {
+        console.warn("PageManager plugin not available. Page setup features are disabled.");
+        return;
+      }
       setTimeout(waitForPageManager, 300);
       return;
     }
@@ -521,6 +532,107 @@ function restoreTemplateAwareTextForBulkExport(root) {
   });
 }
 
+function normalizeBulkDatasourceFileName(fileName, fallbackName = "common_json.json") {
+  const trimmedFileName = String(fileName || "").trim();
+  if (!trimmedFileName) return fallbackName;
+
+  return /\.(json|xml)$/i.test(trimmedFileName)
+    ? trimmedFileName
+    : `${trimmedFileName}.json`;
+}
+
+function isBulkModalJsonContent(content) {
+  if (typeof content !== "string" || !content.trim()) return false;
+
+  try {
+    const parsed = JSON.parse(content);
+    return typeof parsed === "object" && parsed !== null;
+  } catch (err) {
+    return false;
+  }
+}
+
+function getBulkDatasourceSignature(entry) {
+  return String(entry?.content || "").trim();
+}
+
+function loadStoredDatasourceFilesForBulkModal() {
+  const files = [];
+  const seenStorageKeys = new Set();
+  const seenSignatures = new Set();
+  const storedFileNames =
+    typeof getStoredJsonFileNames === "function" ? getStoredJsonFileNames() : [];
+
+  const activeFileName = normalizeBulkDatasourceFileName(
+    localStorage.getItem("common_json_file_name"),
+    ""
+  );
+
+  const candidateFileNames = new Set();
+  if (activeFileName) candidateFileNames.add(activeFileName);
+
+  storedFileNames.forEach((fileName) => {
+    if (!fileName) return;
+    const normalizedName = normalizeBulkDatasourceFileName(fileName);
+    candidateFileNames.add(fileName);
+    candidateFileNames.add(normalizedName);
+  });
+
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (!key || key === "common_json" || key === "common_json_files") continue;
+    if (!key.startsWith("common_json_")) continue;
+    const rawName = key.replace(/^common_json_/, "");
+    candidateFileNames.add(rawName);
+    candidateFileNames.add(normalizeBulkDatasourceFileName(rawName));
+  }
+
+  const addDatasourceFile = (storageKey, name) => {
+    if (seenStorageKeys.has(storageKey)) return;
+    const content = localStorage.getItem(storageKey);
+    if (!isBulkModalJsonContent(content)) return;
+
+    const normalizedName = normalizeBulkDatasourceFileName(name);
+    const signature = `${normalizedName}::${content}`;
+    if (seenSignatures.has(signature)) return;
+
+    seenStorageKeys.add(storageKey);
+    seenSignatures.add(signature);
+    files.push({
+      name: normalizedName,
+      content,
+      fromLocal: true,
+      storageKey,
+      parsedData: JSON.parse(content),
+    });
+  };
+
+  Array.from(candidateFileNames).forEach((fileName) => {
+    if (!fileName) return;
+    const normalizedName = normalizeBulkDatasourceFileName(fileName);
+    const possibleKeys = [
+      `common_json_${fileName}`,
+      `common_json_${normalizedName}`,
+    ];
+
+    const storageKey = possibleKeys.find((key) => localStorage.getItem(key) != null);
+    if (!storageKey) return;
+
+    addDatasourceFile(storageKey, normalizedName);
+  });
+
+  const commonJsonContent = localStorage.getItem("common_json");
+  if (isBulkModalJsonContent(commonJsonContent)) {
+    const commonJsonName = normalizeBulkDatasourceFileName(
+      localStorage.getItem("common_json_file_name"),
+      "common_json.json"
+    );
+    addDatasourceFile("common_json", commonJsonName);
+  }
+
+  return files;
+}
+
 editor.Commands.add("open-modal", {
   run(editor) {
     const html = getHtmlWithCurrentFormState(editor);
@@ -762,117 +874,6 @@ editor.Commands.add("open-modal", {
       e.target.value = "";
     });
 
-    function normalizeBulkDatasourceFileName(fileName, fallbackName = "common_json.json") {
-      const trimmedFileName = String(fileName || "").trim();
-      if (!trimmedFileName) return fallbackName;
-
-      return /\.(json|xml)$/i.test(trimmedFileName)
-        ? trimmedFileName
-        : `${trimmedFileName}.json`;
-    }
-
-    function isBulkModalJsonContent(content) {
-      if (typeof content !== "string" || !content.trim()) return false;
-
-      try {
-        const parsed = JSON.parse(content);
-        return typeof parsed === "object" && parsed !== null;
-      } catch (err) {
-        return false;
-      }
-    }
-
-    function getBulkDatasourceSignature(entry) {
-      const content = String(entry?.content || "").trim();
-      return content;
-    }
-
-    function loadStoredDatasourceFilesForBulkModal() {
-      const files = [];
-      const seenStorageKeys = new Set();
-      const seenSignatures = new Set();
-      const storedFileNames =
-        typeof getStoredJsonFileNames === "function" ? getStoredJsonFileNames() : [];
-
-      const activeFileName = normalizeBulkDatasourceFileName(
-        localStorage.getItem("common_json_file_name"),
-        ""
-      );
-
-      const candidateFileNames = [];
-      if (activeFileName) {
-        candidateFileNames.push(activeFileName);
-      }
-
-      if (!candidateFileNames.length && storedFileNames.length) {
-        candidateFileNames.push(normalizeBulkDatasourceFileName(storedFileNames[0]));
-      }
-
-      candidateFileNames.forEach((fileName) => {
-        const normalizedName = normalizeBulkDatasourceFileName(fileName);
-        const possibleKeys = [
-          `common_json_${fileName}`,
-          `common_json_${normalizedName}`,
-        ];
-
-        const storageKey = possibleKeys.find((key) => {
-          return !seenStorageKeys.has(key) && localStorage.getItem(key) != null;
-        });
-
-        if (!storageKey) return;
-
-        const content = localStorage.getItem(storageKey);
-        if (!isBulkModalJsonContent(content)) return;
-
-        const signature = getBulkDatasourceSignature({
-          name: normalizedName,
-          content,
-        });
-        if (seenSignatures.has(signature)) {
-          console.warn("Skipping duplicate stored datasource file in bulk export:", normalizedName);
-          return;
-        }
-
-        files.push({
-          name: normalizedName,
-          content,
-          fromLocal: true,
-          storageKey,
-          parsedData: JSON.parse(content),
-        });
-        seenSignatures.add(signature);
-        seenStorageKeys.add(storageKey);
-      });
-
-      if (files.length) {
-        console.log("[bulk-export] preloaded datasource file:", files[0].name);
-        return files;
-      }
-
-      const commonJsonContent = localStorage.getItem("common_json");
-      if (!isBulkModalJsonContent(commonJsonContent)) {
-        return files;
-      }
-
-      files.push({
-        name: normalizeBulkDatasourceFileName(
-          localStorage.getItem("common_json_file_name"),
-          "common_json.json"
-        ),
-        content: commonJsonContent,
-        fromLocal: true,
-        storageKey: "common_json",
-        parsedData: JSON.parse(commonJsonContent),
-      });
-
-      seenSignatures.add(getBulkDatasourceSignature(files[files.length - 1]));
-
-      if (files.length) {
-        console.log("[bulk-export] preloaded fallback datasource file:", files[0].name);
-      }
-
-      return files;
-    }
 
     function getMergedUploadedJsonData() {
       const mergedJson = {};
@@ -1416,6 +1417,10 @@ const apiUrl =
   overlay.appendChild(spinner);
   overlay.appendChild(overlayText);
   document.body.appendChild(overlay);
+
+  console.log("[bulk-export] exportType:", exportType);
+  console.log("[bulk-export] payload mappings:", inputJsonMappings);
+  console.log("[bulk-export] uploaded files:", uploadedJsonFiles.map((f) => ({ name: f.name, fromLocal: f.fromLocal })));
 
   try {
     const response = await fetch(apiUrl, { method: "POST", body: formData });
@@ -2952,6 +2957,51 @@ function buildInteractiveSlideshowSettingsScript() {
   return `<script id="interactive-designer-slideshow-settings" type="application/json">${serializedSettings}</script>`;
 }
 
+function restoreSavedPageJsonAttachments(parsedDoc) {
+  if (!parsedDoc || typeof parsedDoc.getElementById !== 'function') return;
+  const jsonScript = parsedDoc.getElementById('interactive-designer-json-files');
+  if (!jsonScript) return;
+  let payload;
+  try {
+    payload = JSON.parse(jsonScript.textContent || '{}');
+  } catch (err) {
+    console.warn('Failed to parse JSON attachments from imported page:', err);
+    jsonScript.remove();
+    return;
+  }
+
+  if (!payload || !Array.isArray(payload.savedJsonFiles)) {
+    jsonScript.remove();
+    const loaderScript = parsedDoc.getElementById('interactive-designer-json-files-loader');
+    if (loaderScript) loaderScript.remove();
+    return;
+  }
+
+  const extraNames = [];
+  payload.savedJsonFiles.forEach(function(file, index) {
+    if (!file || typeof file.content !== 'string') return;
+    try {
+      if (index === 0) {
+        localStorage.setItem('common_json', file.content);
+        if (file.name) localStorage.setItem('common_json_file_name', file.name);
+      } else if (file.name) {
+        localStorage.setItem('common_json_' + file.name, file.content);
+        extraNames.push(file.name);
+      }
+    } catch (err) {
+      console.warn('Failed to restore imported JSON file:', file.name, err);
+    }
+  });
+
+  if (extraNames.length) {
+    localStorage.setItem('common_json_files', extraNames.join(', '));
+  }
+
+  jsonScript.remove();
+  const loaderScript = parsedDoc.getElementById('interactive-designer-json-files-loader');
+  if (loaderScript) loaderScript.remove();
+}
+
 function extractSavedPageImportPayload(rawHtml) {
   const parser = new DOMParser();
   const parsedDoc = parser.parseFromString(String(rawHtml || ""), "text/html");
@@ -2967,13 +3017,21 @@ function extractSavedPageImportPayload(rawHtml) {
     settingsScript.remove();
   }
 
+  restoreSavedPageJsonAttachments(parsedDoc);
+
   const cssText = Array.from(parsedDoc.querySelectorAll("head style"))
     .map((styleTag) => styleTag.textContent || "")
     .join("\n");
 
-  const bodyHtml = parsedDoc.body && parsedDoc.body.innerHTML
+  let bodyHtml = parsedDoc.body && parsedDoc.body.innerHTML
     ? parsedDoc.body.innerHTML
-    : String(rawHtml || "");
+    : "";
+
+  if (!bodyHtml.trim()) {
+    bodyHtml = parsedDoc.documentElement && parsedDoc.documentElement.innerHTML
+      ? parsedDoc.documentElement.innerHTML
+      : String(rawHtml || "");
+  }
 
   return {
     bodyHtml,
@@ -3006,10 +3064,11 @@ function applyImportedSinglePage(rawHtml, reason = "import-single-page", options
     editor.setStyle(cssText);
   }
 
-  editor.setComponents(bodyHtml || rawHtml);
+  const loadHtml = (bodyHtml && bodyHtml.trim()) ? bodyHtml : rawHtml;
+  editor.setComponents(loadHtml);
   scheduleDatasourceRebind(reason, 250);
 
-  if (slideshowSettings || /data-slide\s*=/.test(bodyHtml || rawHtml || "")) {
+  if (slideshowSettings || /data-slide\s*=/.test(loadHtml || "")) {
     scheduleInteractiveSlideshowRestore(reason, 500);
   }
 
@@ -3414,6 +3473,8 @@ function setComponentTemplateText(component, templateText) {
     }
     if (component.removeAttributes) {
       component.removeAttributes("data-template-text");
+    } else if (component.view && component.view.el) {
+      component.view.el.removeAttribute("data-template-text");
     }
     return "";
   }
@@ -3421,10 +3482,18 @@ function setComponentTemplateText(component, templateText) {
   if (component.set) {
     component.set("templateText", normalizedTemplate, { silent: true });
   }
+
+  const encodedTemplate = encodeDatasourceTemplateText(normalizedTemplate);
   if (component.addAttributes) {
     component.addAttributes({
-      "data-template-text": encodeDatasourceTemplateText(normalizedTemplate),
+      "data-template-text": encodedTemplate,
     });
+  } else if (component.setAttributes) {
+    component.setAttributes({
+      "data-template-text": encodedTemplate,
+    });
+  } else if (component.view && component.view.el) {
+    component.view.el.setAttribute("data-template-text", encodedTemplate);
   }
 
   return normalizedTemplate;

@@ -595,18 +595,29 @@ function addFormattedRichTextComponent(editor) {
     return false;
   }
 
+  function isTagAtSelection(rte, tagName) {
+    const sel = (rte && rte.selection && rte.selection()) || getCanvasSelection();
+    if (!sel) return false;
+    const anchorNode = sel.anchorNode || null;
+    const focusNode = sel.focusNode || null;
+    const anchorParent = anchorNode ? anchorNode.parentNode : null;
+    const focusParent = focusNode ? focusNode.parentNode : null;
+    return (anchorParent && anchorParent.nodeName === tagName) ||
+      (focusParent && focusParent.nodeName === tagName);
+  }
+
+
+
   const customRteActions = [
     {
       name: "bold",
       icon: "<b>B</b>",
       attributes: { title: "Bold" },
-      state: function (rte) {
-        return isBoldActiveAtCursor() ? 1 : 0;
-      },
       result: function (rte) {
         return rte.exec("bold");
       }
     },
+
     {
       name: "italic",
       icon: "<i>I</i>",
@@ -1038,15 +1049,25 @@ function addFormattedRichTextComponent(editor) {
             typeof getComponentTemplateText === 'function'
               ? getComponentTemplateText(this)
               : (this.get('templateText') || '');
-          const rawContent =
-            storedTemplateText ||
-            this.get('raw-content') ||
-            this.get('content') ||
-            '';
+          const contentSource =
+            typeof getComponentTemplateSource === 'function'
+              ? getComponentTemplateSource(this)
+              : (
+                storedTemplateText ||
+                this.get('raw-content') ||
+                this.get('content') ||
+                this.view?.el?.innerHTML ||
+                ''
+              );
+          const sourceText = String(contentSource || '');
+          const sourceHasTemplate =
+            typeof hasDatasourceTemplatePlaceholders === 'function'
+              ? hasDatasourceTemplatePlaceholders(sourceText)
+              : (sourceText.includes('{') && sourceText.includes('}'));
 
           // 🔁 TEMPLATE MODE
-          if (rawContent.includes('{') && rawContent.includes('}')) {
-            const templateSource = storedTemplateText || String(rawContent);
+          if (sourceHasTemplate) {
+            const templateSource = storedTemplateText || sourceText;
             if (typeof setComponentTemplateText === 'function') {
               setComponentTemplateText(this, templateSource);
             } else {
@@ -1086,8 +1107,15 @@ function addFormattedRichTextComponent(editor) {
           }
           else {
             const firstPath = jsonPaths[0];
+            const normalizedSourceText = sourceText.trim();
+            const isDefaultPlaceholderText = /^insert your text here$/i.test(normalizedSourceText);
+            const isSingleTokenBinding = /^\{[^{}]+\}$/.test(normalizedSourceText);
+            const shouldReplaceEntireContent =
+              !normalizedSourceText ||
+              isDefaultPlaceholderText ||
+              isSingleTokenBinding;
 
-            if (firstPath) {
+            if (firstPath && shouldReplaceEntireContent) {
               try {
                 const value = resolveDatasourcePathValue(commonJson, firstPath);
 
@@ -1478,8 +1506,10 @@ function addFormattedRichTextComponent(editor) {
       },
 
       enableRichTextEditing(e) {
-        e.preventDefault();
-        e.stopPropagation();
+        if (e && typeof e.stopPropagation === 'function') {
+          e.stopPropagation();
+        }
+        this._rteEvent = e || null;
         if (this.rteTimeout) {
           clearTimeout(this.rteTimeout);
           this.rteTimeout = null;
@@ -1502,7 +1532,42 @@ function addFormattedRichTextComponent(editor) {
           }
         }
 
-        this.model.enableRTE();
+        const startEditing = () => {
+          try {
+            const canvasSelection = getCanvasSelection();
+            if (canvasSelection && canvasSelection.rangeCount) {
+              this.pendingSelection = canvasSelection.getRangeAt(0).cloneRange();
+            } else {
+              this.pendingSelection = null;
+
+              const canvasDoc = editor && editor.Canvas ? editor.Canvas.getDocument() : null;
+              if (canvasDoc && e && typeof e.clientX === 'number' && typeof e.clientY === 'number') {
+                let pointRange = null;
+
+                if (typeof canvasDoc.caretRangeFromPoint === 'function') {
+                  pointRange = canvasDoc.caretRangeFromPoint(e.clientX, e.clientY);
+                } else if (typeof canvasDoc.caretPositionFromPoint === 'function') {
+                  const caretPos = canvasDoc.caretPositionFromPoint(e.clientX, e.clientY);
+                  if (caretPos && canvasDoc.createRange) {
+                    pointRange = canvasDoc.createRange();
+                    pointRange.setStart(caretPos.offsetNode, caretPos.offset);
+                    pointRange.setEnd(caretPos.offsetNode, caretPos.offset);
+                  }
+                }
+
+                if (pointRange && this.el && this.el.contains(pointRange.commonAncestorContainer)) {
+                  this.pendingSelection = pointRange.cloneRange();
+                }
+              }
+            }
+          } catch (err) {
+            this.pendingSelection = null;
+          }
+
+          this.model.enableRTE();
+        };
+
+        setTimeout(startEditing, 10);
       },
 
       startRTE() {
@@ -1535,22 +1600,29 @@ function addFormattedRichTextComponent(editor) {
             ? getComponentTemplateText(this.model)
             : (this.model.get('templateText') || '');
 
+        let nextHtml = '';
         if (isFormulaEnabled) {
-          this.el.innerHTML = rawContent;
+          nextHtml = rawContent;
         } else if (
           (typeof hasDatasourceTemplatePlaceholders === 'function'
             ? hasDatasourceTemplatePlaceholders(templateText)
             : /{[^{}]+}/.test(String(templateText || '')))
         ) {
-          this.el.innerHTML = templateText;
+          nextHtml = templateText;
         } else {
-          this.el.innerHTML = content;
+          nextHtml = content;
+        }
+
+        if (this.el.innerHTML !== nextHtml) {
+          this.el.innerHTML = nextHtml;
         }
 
         this.el.contentEditable = true;
 
+        const rteEvent = this._rteEvent || null;
+        this._rteEvent = null;
         try {
-          rte.enable(this, null, {
+          rte.enable(this, rteEvent, {
             styleWithCSS: false
           });
         } catch (e) {
@@ -1560,9 +1632,14 @@ function addFormattedRichTextComponent(editor) {
           return;
         }
 
-        // Strip extra actions (link, wrap) that GrapesJS adds by default.
-        // Keep only the 4 formatting actions.
-        const allowedActionNames = new Set(['bold', 'italic', 'underline', 'strikethrough']);
+        // Ensure custom actions are available even if GrapesJS falls back to defaults.
+        // Keep formatting actions.
+        const allowedActionNames = new Set([
+          'bold',
+          'italic',
+          'underline',
+          'strikethrough'
+        ]);
         rte.getAll().slice().forEach(action => {
           if (!allowedActionNames.has(action.name)) {
             try { rte.remove(action.name); } catch (e) {}
@@ -1578,6 +1655,7 @@ function addFormattedRichTextComponent(editor) {
           rte._execOriginal = rte.exec.bind(rte);
           rte.exec = function (cmd, value) {
             const activeView = rte._activeFormattedRichTextView;
+            let preRange = null;
 
             // Focus the editable element first so execCommand targets
             // the correct document context inside the iframe.
@@ -1588,21 +1666,52 @@ function addFormattedRichTextComponent(editor) {
             // Restore saved selection (clone to avoid stale range issues)
             try {
               const sel = getCanvasSelection();
-              if (rte._lastSelection && sel) {
+              let lastSelection = rte._lastSelection || (activeView && activeView.pendingSelection) || null;
+              const isToggleCmd = ['bold', 'italic', 'underline', 'strikethrough'].includes(cmd);
+
+              if (lastSelection && lastSelection.collapsed && isToggleCmd && rte._lastNonCollapsedSelection) {
+                lastSelection = rte._lastNonCollapsedSelection;
+              } else if (!lastSelection && rte._lastNonCollapsedSelection && isToggleCmd) {
+                lastSelection = rte._lastNonCollapsedSelection;
+              }
+
+              if (lastSelection && activeView && activeView.el) {
+                const container = lastSelection.commonAncestorContainer || null;
+                if (container && !activeView.el.contains(container)) {
+                  lastSelection = null;
+                }
+              }
+
+              if (lastSelection && sel) {
+                preRange = !lastSelection.collapsed ? lastSelection.cloneRange() : null;
                 sel.removeAllRanges();
-                sel.addRange(rte._lastSelection.cloneRange());
+                sel.addRange(lastSelection.cloneRange());
               }
             } catch (err) {}
 
             const res = rte._execOriginal(cmd, value);
 
-            // After command, re-capture the (now updated) selection and
-            // clear the old stored one so selectionchange provides fresh data.
-            rte._lastSelection = null;
+            // After command, re-capture the (now updated) selection
             try {
               const sel = getCanvasSelection();
               if (sel && sel.rangeCount) {
-                rte._lastSelection = sel.getRangeAt(0).cloneRange();
+                const postRange = sel.getRangeAt(0);
+                const isToggleCmd = ['bold', 'italic', 'underline', 'strikethrough'].includes(cmd);
+
+                if (preRange && postRange.collapsed && isToggleCmd) {
+                  sel.removeAllRanges();
+                  sel.addRange(preRange.cloneRange());
+                  rte._lastSelection = preRange.cloneRange();
+                  rte._lastNonCollapsedSelection = preRange.cloneRange();
+                } else {
+                  rte._lastSelection = postRange.cloneRange();
+                  if (!postRange.collapsed) {
+                    rte._lastNonCollapsedSelection = postRange.cloneRange();
+                  }
+                }
+              } else if (preRange) {
+                rte._lastSelection = preRange.cloneRange();
+                rte._lastNonCollapsedSelection = preRange.cloneRange();
               }
             } catch (err) {}
 
@@ -1635,6 +1744,9 @@ function addFormattedRichTextComponent(editor) {
           const range = sel.getRangeAt(0);
           if (this.el && this.el.contains(range.commonAncestorContainer)) {
             rte._lastSelection = range.cloneRange();
+            if (!range.collapsed) {
+              rte._lastNonCollapsedSelection = range.cloneRange();
+            }
             if (typeof rte.updateActiveActions === 'function') {
               setTimeout(() => rte.updateActiveActions(), 0);
             }
@@ -1704,35 +1816,22 @@ function addFormattedRichTextComponent(editor) {
 
         setTimeout(() => {
           if (this.rteActive && this.el) {
-            this.el.focus();
-            const range = document.createRange();
-            const selection = window.getSelection();
+            const canvasDoc = editor && editor.Canvas ? editor.Canvas.getDocument() : null;
+            const selection = canvasDoc && canvasDoc.getSelection ? canvasDoc.getSelection() : null;
 
-            const walker = document.createTreeWalker(
-              this.el,
-              NodeFilter.SHOW_TEXT,
-              null,
-              false
-            );
+            try {
+              this.el.focus();
+            } catch (err) {}
 
-            let lastTextNode = null;
-            let node;
-            while (node = walker.nextNode()) {
-              lastTextNode = node;
+            if (this.pendingSelection && selection) {
+              try {
+                selection.removeAllRanges();
+                selection.addRange(this.pendingSelection.cloneRange());
+              } catch (err) {}
+              this.pendingSelection = null;
             }
-
-            if (lastTextNode) {
-              range.setStart(lastTextNode, lastTextNode.textContent.length);
-              range.setEnd(lastTextNode, lastTextNode.textContent.length);
-            } else {
-              range.selectNodeContents(this.el);
-              range.collapse(false);
-            }
-
-            selection.removeAllRanges();
-            selection.addRange(range);
           }
-        }, 200);
+        }, 10);
       },
 
       debounce(func, wait) {
@@ -1792,6 +1891,7 @@ function addFormattedRichTextComponent(editor) {
 
         // Clear active view reference and stored selection
         rte._lastSelection = null;
+        rte._lastNonCollapsedSelection = null;
         if (rte._activeFormattedRichTextView === this) {
           rte._activeFormattedRichTextView = null;
         }
