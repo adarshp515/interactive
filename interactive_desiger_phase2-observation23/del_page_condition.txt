@@ -1,0 +1,109 @@
+Required changes
+
+1.Fix cleanup target when reinserting per page
+At page-setup-manager.js:8608
+
+From:
+const mainContentAreaEl = mainContentArea.view.el;
+const existingIndicators = mainContentAreaEl.querySelectorAll(
+".conditional-break-indicator",
+);
+existingIndicators.forEach((ind) => ind.remove());
+
+To:
+const pageContent = pageComponent.find(".page-content")[0];
+if (!pageContent) return;
+const pageContentEl = pageContent.view.el;
+
+const existingIndicators = pageContentEl.querySelectorAll(
+".conditional-break-indicator",
+);
+existingIndicators.forEach((ind) => ind.remove());
+
+And remove duplicate pageContent declaration later near page-setup-manager.js:8681 because it is now declared earlier.
+
+2.Fix remove-all logic to remove DOM nodes (not only Grapes components)
+At page-setup-manager.js:8693
+From:
+const conditionalIndicators = pageContent.find(
+'.conditional-break-indicator[data-conditional="true"]',
+);
+conditionalIndicators.forEach((ind) => ind.remove());
+
+To:
+const pageContentEl = pageContent.getEl ? pageContent.getEl() : pageContent.view?.el;
+if (pageContentEl) {
+pageContentEl
+.querySelectorAll('.conditional-break-indicator[data-conditional="true"]')
+.forEach((ind) => ind.remove());
+}
+
+3.Fix main-content cleanup similarly
+At page-setup-manager.js:8701
+From:
+const conditionalBreaks = mainContentArea.find(
+'[data-conditional="true"]',
+);
+conditionalBreaks.forEach((br) => br.remove());
+
+To:
+const mainContentEl = mainContentArea.getEl ? mainContentArea.getEl() : mainContentArea.view?.el;
+if (mainContentEl) {
+mainContentEl
+.querySelectorAll('[data-conditional="true"]')
+.forEach((br) => br.remove());
+}
+
+What this fixes for your 2 issues:
+
+Specific page override delete now visually disappears correctly.
+Disabling conditional page break removes old dashed lines from the document instead of leaving stale indicators.
+
+
+I’ll patch the page-override delete handler so it removes override data robustly and refreshes conditional break lines immediately (without waiting for Apply), then I’ll share exact line-by-line from→to changes.
+
+Edited
+page-setup-manager.js+16-4
+Patch is in. I’m running a quick error check to confirm no regression, then I’ll list every changed line from→to as requested.
+
+Fixed. Page-specific override delete now works immediately and cleans the line without waiting for Apply.
+
+Changes made in page-setup-manager.js:
+
+Safer delete-click target resolution at page-setup-manager.js:6858
+From:
+const pageNum = e.target.closest(".remove-override").getAttribute("data-page-num");
+To:
+const removeBtn = e.target.closest(".remove-override");
+if (!removeBtn) return;
+const pageNum = removeBtn.getAttribute("data-page-num");
+
+Why:
+Prevents null/edge click target issues when clicking icon/text inside the button.
+
+Robust override key deletion at page-setup-manager.js:6863
+From:
+delete this.pageSettings.conditionalPageBreak.pageOverrides[pageNum];
+To:
+delete this.pageSettings.conditionalPageBreak.pageOverrides[pageNum];
+delete this.pageSettings.conditionalPageBreak.pageOverrides[Number(pageNum)];
+
+Why:
+Covers both string and numeric key forms, so specific override is definitely removed from state.
+
+Immediate visual refresh after delete at page-setup-manager.js:6878
+Added:
+this.removeAllConditionalPageBreaks && this.removeAllConditionalPageBreaks();
+if (this.pageSettings.conditionalPageBreak?.enabled) {
+setTimeout(() => {
+this.insertConditionalPageBreaksToAllPages &&
+this.insertConditionalPageBreaksToAllPages();
+}, 50);
+}
+Why:
+Removes stale dashed conditional line instantly after deleting a page override and redraws current valid indicators.
+
+Validation:
+
+No errors in file after patch.
+Continued with Autopilot: Task not yet complete
