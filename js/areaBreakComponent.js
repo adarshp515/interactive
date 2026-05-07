@@ -494,80 +494,72 @@ function flowLayoutComponent(editor) {
                 try {
                   const splitRes = this.splitTextContent(item, compModel, remainPx);
                   if (splitRes) {
-                    const tempDiv = document.createElement('div');
-                    tempDiv.innerHTML = splitRes.remainingHTML;
-                    const remainingText = tempDiv.textContent.trim();
+                    const capturedStyles = cloneStyles(item);
 
-                    if (remainingText.length < 20) {
-                      handled = false;
-                    } else {
-                      const capturedStyles = cloneStyles(item);
+                    try {
+                      if (compModel?.set) compModel.set({ content: splitRes.remainingHTML }, { silent: true });
+                      if (compModel?.view?.el) compModel.view.el.innerHTML = splitRes.remainingHTML;
+                      else item.innerHTML = splitRes.remainingHTML;
+                    } catch (e) { item.innerHTML = splitRes.remainingHTML; }
 
-                      try {
-                        if (compModel?.set) compModel.set({ content: splitRes.remainingHTML }, { silent: true });
-                        if (compModel?.view?.el) compModel.view.el.innerHTML = splitRes.remainingHTML;
-                        else item.innerHTML = splitRes.remainingHTML;
-                      } catch (e) { item.innerHTML = splitRes.remainingHTML; }
+                    const newItemId = "flow-item-" + Date.now().toString(36) + "-" + Math.floor(Math.random() * 10000);
+                    const continuationStyles = { ...capturedStyles };
 
-                      const newItemId = "flow-item-" + Date.now().toString(36) + "-" + Math.floor(Math.random() * 10000);
-                      const continuationStyles = { ...capturedStyles };
+                    ['padding', 'paddingTop', 'paddingBottom', 'paddingLeft', 'paddingRight',
+                      'margin', 'marginTop', 'marginBottom'].forEach(p => continuationStyles[p] = '0');
+                    delete continuationStyles.width;
+                    delete continuationStyles['max-width'];
+                    delete continuationStyles.maxWidth;
 
-                      ['padding', 'paddingTop', 'paddingBottom', 'paddingLeft', 'paddingRight',
-                        'margin', 'marginTop', 'marginBottom'].forEach(p => continuationStyles[p] = '0');
-                      delete continuationStyles.width;
-                      delete continuationStyles['max-width'];
-                      delete continuationStyles.maxWidth;
+                    const modelConfig = {
+                      type: compModel.get("type"),
+                      content: splitRes.overflowHTML,
+                      attributes: {
+                        ...(compModel.getAttributes ? compModel.getAttributes() : {}),
+                        id: newItemId,
+                        'data-flow-continuation': 'true'
+                      },
+                      style: continuationStyles
+                    };
 
-                      const modelConfig = {
-                        type: compModel.get("type"),
-                        content: splitRes.overflowHTML,
-                        attributes: {
-                          ...(compModel.getAttributes ? compModel.getAttributes() : {}),
-                          id: newItemId,
-                          'data-flow-continuation': 'true'
-                        },
-                        style: continuationStyles
-                      };
-
-                      if (compModel.getStyle) {
-                        const baseStyle = { ...compModel.getStyle() };
-                        delete baseStyle.width;
-                        delete baseStyle['max-width'];
-                        delete baseStyle.maxWidth;
-                        modelConfig.style = { ...baseStyle, ...continuationStyles };
-                      }
-
-                      const targetColModel = layoutModel.components().at(colIndex + 1);
-                      const targetFlowModel = targetColModel && targetColModel.components().at(0);
-                      let newModel = null;
-
-                      if (targetFlowModel) {
-                        newModel = targetFlowModel.components().add(modelConfig, { at: 0 });
-                        cleanWidthStyles(newModel, newModel.view?.el);
-
-                        setTimeout(() => {
-                          const el = newModel.view?.el;
-                          if (el) {
-                            Object.assign(el.style, continuationStyles);
-                            cleanWidthStyles(newModel, el);
-                          }
-                        }, 10);
-                      } else {
-                        newModel = editor.Components.addComponent(modelConfig);
-                        if (targetColModel) targetColModel.components().add(newModel, { at: 0 });
-                        cleanWidthStyles(newModel);
-                      }
-
-                      processedIds.add(itemId);
-                      processedIds.add(newModel ? newModel.getId() : newItemId);
-                      editor.select(null);
-                      setTimeout(() => { try { editor.select(newModel); } catch (e) { } }, 10);
-
-                      handled = true;
-                      scheduleReflow(this, 50);
-                      this._reflowing = false;
-                      return;
+                    if (compModel.getStyle) {
+                      const baseStyle = { ...compModel.getStyle() };
+                      delete baseStyle.width;
+                      delete baseStyle['max-width'];
+                      delete baseStyle.maxWidth;
+                      modelConfig.style = { ...baseStyle, ...continuationStyles };
                     }
+
+                    const targetColModel = layoutModel.components().at(colIndex + 1);
+                    const targetFlowModel = targetColModel && targetColModel.components().at(0);
+                    let newModel = null;
+
+                    if (targetFlowModel) {
+                      newModel = targetFlowModel.components().add(modelConfig, { at: 0 });
+                      cleanWidthStyles(newModel, newModel.view?.el);
+
+                      setTimeout(() => {
+                        const el = newModel.view?.el;
+                        if (el) {
+                          Object.assign(el.style, continuationStyles);
+                          cleanWidthStyles(newModel, el);
+                        }
+                      }, 10);
+                    } else {
+                      newModel = editor.Components.addComponent(modelConfig);
+                      if (targetColModel) targetColModel.components().add(newModel, { at: 0 });
+                      cleanWidthStyles(newModel);
+                    }
+
+                    processedIds.add(itemId);
+                    processedIds.add(newModel ? newModel.getId() : newItemId);
+                    editor.select(null);
+                    setTimeout(() => { try { editor.select(newModel); } catch (e) { } }, 10);
+
+                    handled = true;
+                    scheduleReflow(this, 50);
+                    this._reflowing = false;
+                    return;
                   }
                 } catch (err) {
                   console.log("Flow: partial split error", err);

@@ -428,6 +428,27 @@ excelscv.addEventListener("click", uploadExcelCsv, true);
 
 let uploadedJsonFiles = [];
 
+function isDatasourceTableOrChartNode(node) {
+  if (!node || typeof node.closest !== "function") return false;
+  return Boolean(
+    node.matches?.(".json-table-container, .json-table-wrapper, .json-data-table, table, thead, tbody, tfoot, tr, td, th, [data-i_designer-type='custom_line_chart'], [data-gjs-type='custom_line_chart'], .highchart-live-areaspline") ||
+    node.closest(".json-table-container, .json-table-wrapper, .json-data-table, table, [data-i_designer-type='custom_line_chart'], [data-gjs-type='custom_line_chart'], .highchart-live-areaspline")
+  );
+}
+
+function formatDatasourceScalarValue(value, allowJson = false) {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "object") {
+    if (!allowJson) return undefined;
+    try {
+      return JSON.stringify(value);
+    } catch (err) {
+      return undefined;
+    }
+  }
+  return String(value);
+}
+
 function getHtmlWithCurrentFormState(editor) {
   const baseHtml = editor.getHtml();
   const tempDiv = document.createElement("div");
@@ -506,6 +527,7 @@ function getHtmlWithCurrentFormState(editor) {
   liveDoc.body.querySelectorAll(textContentSelector).forEach((liveNode) => {
     const exportNode = exportNodesById.get(liveNode.id);
     if (!exportNode) return;
+    if (isDatasourceTableOrChartNode(liveNode)) return;
 
     const liveHtml = liveNode.innerHTML || "";
     if (liveHtml && !/^\s*Insert your text here\s*$/i.test(liveHtml)) {
@@ -551,6 +573,7 @@ function getHtmlWithCurrentFormState(editor) {
     .forEach((liveNode) => {
       const exportNode = exportNodesById.get(liveNode.id);
       if (!exportNode) return;
+      if (isDatasourceTableOrChartNode(liveNode)) return;
 
       [
         "my-input-json",
@@ -577,6 +600,7 @@ function getHtmlWithCurrentFormState(editor) {
     .forEach((liveNode) => {
       // Skip if already handled above (has ID)
       if (liveNode.id) return;
+      if (isDatasourceTableOrChartNode(liveNode)) return;
 
       // Find matching element in export by traversing tree structure
       // For now, just copy inline datasource attributes to matching position
@@ -2409,13 +2433,16 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
           return current;
         }
 
-        function getJsonDataArray() {
-          if (Array.isArray(window.__BULK_EXPORT_JSON__)) {
-            return window.__BULK_EXPORT_JSON__;
-          }
-          if (Array.isArray(window.jsonData1) && window.jsonData1.length) {
-            return window.jsonData1;
-          }
+	        function getJsonDataArray() {
+	          if (Array.isArray(window.__BULK_EXPORT_JSON__)) {
+	            return window.__BULK_EXPORT_JSON__;
+	          }
+	          if (window.__BULK_EXPORT_JSON__ && typeof window.__BULK_EXPORT_JSON__ === 'object') {
+	            return [window.__BULK_EXPORT_JSON__];
+	          }
+	          if (Array.isArray(window.jsonData1) && window.jsonData1.length) {
+	            return window.jsonData1;
+	          }
 
           try {
             return [JSON.parse(localStorage.getItem('common_json') || '{}')];
@@ -2478,7 +2505,7 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
           return String(value || '').replace(/[-\\/\\\\^$*+?.()|[\\]{}]/g, '\\\\$&');
         }
 
-        function getPlaceholderTokens(pathExpression) {
+	        function getPlaceholderTokens(pathExpression) {
           var tokens = tokenizePath(pathExpression);
           if (!tokens.length) return [];
           var originalPath = String(pathExpression || '').trim().replace(/^\\.+/, '');
@@ -2505,17 +2532,133 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
             }
           }
 
-          return candidates.filter(function(value, index, arr) {
-            return value && arr.indexOf(value) === index;
-          });
-        }
+	          return candidates.filter(function(value, index, arr) {
+	            return value && arr.indexOf(value) === index;
+	          });
+	        }
 
-        function renderTemplateValue(templateText, pathExpression, value) {
-          var rendered = String(templateText || '');
-          var valueText = String(value == null ? '' : value);
-          if (String(pathExpression || '').indexOf('__i_designer_template_values.') === 0) {
-            return valueText;
-          }
+	        function formatBulkScalar(value, allowJson) {
+	          if (value === undefined || value === null) return '';
+	          if (typeof value === 'object') {
+	            if (!allowJson) return undefined;
+	            try {
+	              return JSON.stringify(value);
+	            } catch (err) {
+	              return undefined;
+	            }
+	          }
+	          return String(value);
+	        }
+
+	        function decodeJsonState(node) {
+	          var raw = node && node.getAttribute && node.getAttribute('data-json-state');
+	          if (!raw) return null;
+	          try {
+	            return JSON.parse(decodeURIComponent(raw));
+	          } catch (err) {
+	            return null;
+	          }
+	        }
+
+	        function copyStyle(source, target) {
+	          if (!source || !target) return;
+	          var style = source.getAttribute('style');
+	          if (style) target.setAttribute('style', style);
+	          var className = source.getAttribute('class');
+	          if (className) target.setAttribute('class', className);
+	        }
+
+	        function normalizeTableData(rawValue) {
+	          var tableData = rawValue;
+	          if (typeof tableData === 'string') {
+	            try {
+	              tableData = JSON.parse(tableData);
+	            } catch (jsonErr) {
+	              try {
+	                tableData = (new Function('return ' + tableData))();
+	              } catch (evalErr) {
+	                tableData = null;
+	              }
+	            }
+	          }
+	          if (!tableData || typeof tableData !== 'object') return null;
+	          var headers = tableData.heading || tableData.headers;
+	          var rows = tableData.data || tableData.rows;
+	          if (!headers || typeof headers !== 'object' || !Array.isArray(rows)) return null;
+	          return { headers: headers, rows: rows };
+	        }
+
+	        function applyJsonTableBindings() {
+	          var candidates = document.querySelectorAll('.json-data-table[my-input-json], .json-table-wrapper[my-input-json], .json-table-container[my-input-json]');
+	          candidates.forEach(function(candidate) {
+	            if (!candidate || !candidate.getAttribute) return;
+	            var table = candidate.matches && candidate.matches('table')
+	              ? candidate
+	              : candidate.querySelector && candidate.querySelector('table.json-data-table, table');
+	            if (!table) return;
+
+	            var jsonPath = candidate.getAttribute('my-input-json') || table.getAttribute('my-input-json') || '';
+	            if (!jsonPath) return;
+
+	            if (!table.getAttribute('my-input-json')) table.setAttribute('my-input-json', jsonPath);
+	            if (!table.getAttribute('data-json-file-index') && candidate.getAttribute('data-json-file-index')) {
+	              table.setAttribute('data-json-file-index', candidate.getAttribute('data-json-file-index'));
+	            }
+
+	            var jsonObject = getCurrentJsonObject(table);
+	            var resolved = resolveFromAnyLanguage(jsonObject, jsonPath, '');
+	            var normalized = normalizeTableData(resolved);
+	            if (!normalized) return;
+
+	            var oldHeader = table.querySelector('thead th');
+	            var oldCell = table.querySelector('tbody td') || table.querySelector('td');
+	            var state = decodeJsonState(candidate) || decodeJsonState(table) || {};
+	            var keys = Object.keys(normalized.headers);
+	            if (!keys.length) return;
+
+	            table.innerHTML = '';
+
+	            var thead = document.createElement('thead');
+	            var headerRow = document.createElement('tr');
+	            keys.forEach(function(key) {
+	              var th = document.createElement('th');
+	              copyStyle(oldHeader, th);
+	              th.textContent = formatBulkScalar(normalized.headers[key], true) || '';
+	              headerRow.appendChild(th);
+	            });
+	            thead.appendChild(headerRow);
+	            table.appendChild(thead);
+
+	            var tbody = document.createElement('tbody');
+	            normalized.rows.forEach(function(row) {
+	              var tr = document.createElement('tr');
+	              keys.forEach(function(key) {
+	                var td = document.createElement('td');
+	                copyStyle(oldCell, td);
+	                var value = row && Object.prototype.hasOwnProperty.call(row, key) ? row[key] : '';
+	                td.textContent = formatBulkScalar(value, true) || '';
+	                tr.appendChild(td);
+	              });
+	              tbody.appendChild(tr);
+	            });
+	            table.appendChild(tbody);
+	            table.setAttribute('data-json-state', encodeURIComponent(JSON.stringify({
+	              headers: normalized.headers,
+	              data: normalized.rows,
+	              styles: state.styles || null,
+	              highlights: state.highlights || null,
+	              meta: state.meta || null
+	            })));
+	          });
+	        }
+
+	        function renderTemplateValue(templateText, pathExpression, value) {
+	          var rendered = String(templateText || '');
+	          var valueText = formatBulkScalar(value, false);
+	          if (valueText === undefined) return rendered;
+	          if (String(pathExpression || '').indexOf('__i_designer_template_values.') === 0) {
+	            return valueText;
+	          }
           var tokens = getPlaceholderTokens(pathExpression);
 
           if (!tokens.length) return valueText;
@@ -2528,12 +2671,13 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
           return rendered === beforeReplace ? valueText : rendered;
         }
 
-        function applyTextBindingValues() {
-          document.querySelectorAll('[my-input-json]').forEach(function(node) {
-            var jsonObject = getCurrentJsonObject(node);
+	        function applyTextBindingValues() {
+	          document.querySelectorAll('[my-input-json]').forEach(function(node) {
+	            var jsonObject = getCurrentJsonObject(node);
 
-            if (!node || /^(SCRIPT|STYLE|LINK|META)$/i.test(node.tagName || '')) return;
-            if (node.closest && node.closest('[data-watermark-json-path]')) return;
+	            if (!node || /^(SCRIPT|STYLE|LINK|META)$/i.test(node.tagName || '')) return;
+	            if (node.closest && node.closest('[data-watermark-json-path]')) return;
+	            if (node.closest && node.closest('.json-table-container, .json-table-wrapper, .json-data-table, table, [data-i_designer-type="custom_line_chart"], [data-gjs-type="custom_line_chart"], .highchart-live-areaspline')) return;
 
             var rawPathExpression = node.getAttribute('my-input-json') || '';
             var paths = rawPathExpression.split(',').map(function(path) {
@@ -2549,12 +2693,13 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
             if (String(rawPathExpression || '').indexOf('__i_designer_template_values.') === 0) {
               var templateValues = jsonObject && jsonObject.__i_designer_template_values;
               var templateId = rawPathExpression.slice('__i_designer_template_values.'.length);
-              if (templateValues && templateId && Object.prototype.hasOwnProperty.call(templateValues, templateId)) {
-                directValue = templateValues[templateId];
-                if (hasTemplate) {
-                  rendered = String(directValue);
-                }
-              }
+	              if (templateValues && templateId && Object.prototype.hasOwnProperty.call(templateValues, templateId)) {
+	                directValue = templateValues[templateId];
+	                if (hasTemplate) {
+	                  var directScalar = formatBulkScalar(directValue, false);
+	                  if (directScalar !== undefined) rendered = directScalar;
+	                }
+	              }
             }
 
             paths.forEach(function(pathExpression, index) {
@@ -2571,19 +2716,21 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
               }
             });
 
-            var finalValue = hasTemplate ? rendered : directValue;
-            if (finalValue === undefined || finalValue === null) return;
+	            var finalValue = hasTemplate ? rendered : directValue;
+	            if (finalValue === undefined || finalValue === null) return;
+	            var normalizedValue = hasTemplate ? String(finalValue) : formatBulkScalar(finalValue, false);
+	            if (normalizedValue === undefined) return;
 
-            if (/^(INPUT|TEXTAREA|SELECT)$/i.test(node.tagName || '')) {
-              node.value = String(finalValue);
-              node.setAttribute('value', String(finalValue));
-            } else if (hasTemplate) {
-              node.innerHTML = String(finalValue);
-            } else {
-              node.textContent = String(finalValue);
-            }
-          });
-        }
+	            if (/^(INPUT|TEXTAREA|SELECT)$/i.test(node.tagName || '')) {
+	              node.value = normalizedValue;
+	              node.setAttribute('value', normalizedValue);
+	            } else if (hasTemplate) {
+	              node.innerHTML = normalizedValue;
+	            } else {
+	              node.textContent = normalizedValue;
+	            }
+	          });
+	        }
 
         function applyWatermarkValues() {
           document.querySelectorAll('[data-watermark-json-path]').forEach(function(node) {
@@ -2598,16 +2745,18 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
           });
         }
 
-        if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', function() {
-            applyTextBindingValues();
-            applyWatermarkValues();
-            window.__BULK_JSON_BINDINGS_READY__ = true;
-          });
-        } else {
-          applyTextBindingValues();
-          applyWatermarkValues();
-          window.__BULK_JSON_BINDINGS_READY__ = true;
+	        if (document.readyState === 'loading') {
+	          document.addEventListener('DOMContentLoaded', function() {
+	            applyJsonTableBindings();
+	            applyTextBindingValues();
+	            applyWatermarkValues();
+	            window.__BULK_JSON_BINDINGS_READY__ = true;
+	          });
+	        } else {
+	          applyJsonTableBindings();
+	          applyTextBindingValues();
+	          applyWatermarkValues();
+	          window.__BULK_JSON_BINDINGS_READY__ = true;
         }
       })();
     </script>
@@ -3237,10 +3386,22 @@ const apiUrl = `${API_BASE_URL}/uploadHtmlToPdf?file`;
 
     const escapedPayload = JSON.stringify(payload).replace(/<\//g, "<\\/");
 
-    return `
-<script>
-(function() {
-  var exportDatasourcePayload = ${escapedPayload};
+	return `
+	<script>
+	(function() {
+	  if (window.__BULK_EXPORT_JSON__ && !Array.isArray(window.__BULK_EXPORT_JSON__)) {
+	    window.project_type2 = "downloadedJsonType";
+	    window.jsonData1 = [window.__BULK_EXPORT_JSON__];
+	    try {
+	      localStorage.setItem("common_json", JSON.stringify(window.__BULK_EXPORT_JSON__));
+	      localStorage.removeItem("common_json_files");
+	      localStorage.setItem("common_json_file_name", "");
+	    } catch (storageErr) {
+	      console.warn("Export datasource per-file bootstrap failed:", storageErr);
+	    }
+	    return;
+	  }
+	  var exportDatasourcePayload = ${escapedPayload};
   var exportedJsonData = [];
 
   if (exportDatasourcePayload.baseJson != null) {
@@ -5505,6 +5666,8 @@ function resolveDataBoundExportContent(liveNode) {
   jsonPaths.forEach((path) => {
     const resolvedValue = resolution.valuesByPath.get(path);
     if (resolvedValue === undefined || resolvedValue === null) return;
+    const scalarValue = formatDatasourceScalarValue(resolvedValue);
+    if (scalarValue === undefined) return;
 
     const placeholderTokens = getPlaceholderTokensFromPath(resolution.jsonData, path);
     if (!placeholderTokens.length) return;
@@ -5514,7 +5677,7 @@ function resolveDataBoundExportContent(liveNode) {
       const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       renderedContent = renderedContent.replace(
         new RegExp(escapedPlaceholder, "g"),
-        String(resolvedValue)
+        scalarValue
       );
     });
   });
@@ -5582,6 +5745,8 @@ function resolveTextContentFromDatasource(component, jsonPath, commonJson) {
     jsonPaths.forEach((path) => {
       const resolvedValue = resolveValueFromDatasource(commonJson, path);
       if (resolvedValue === undefined || resolvedValue === null) return;
+      const scalarValue = formatDatasourceScalarValue(resolvedValue);
+      if (scalarValue === undefined) return;
 
       const placeholderTokens = getPlaceholderTokensFromPath(commonJson, path);
       if (!placeholderTokens.length) return;
@@ -5589,7 +5754,7 @@ function resolveTextContentFromDatasource(component, jsonPath, commonJson) {
       placeholderTokens.forEach((placeholderToken) => {
         const placeholder = `{${placeholderToken}}`;
         const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        nextContent = nextContent.replace(new RegExp(escapedPlaceholder, "g"), String(resolvedValue));
+        nextContent = nextContent.replace(new RegExp(escapedPlaceholder, "g"), scalarValue);
       });
     });
 
@@ -5598,7 +5763,7 @@ function resolveTextContentFromDatasource(component, jsonPath, commonJson) {
 
   const firstValue = resolveValueFromDatasource(commonJson, jsonPaths[0]);
   if (firstValue === undefined || firstValue === null) return undefined;
-  return String(firstValue);
+  return formatDatasourceScalarValue(firstValue);
 }
 
 function applyResolvedTextContent(component, content) {
@@ -5695,56 +5860,22 @@ function updateComponentsWithNewJson(editor) {
       attrs["data-i_designer-type"] === "custom_line_chart";
 
     if (isChartComponent) {
-      if (typeof component.restorePersistedChartState === "function") {
-        component.restorePersistedChartState();
-      }
       if (typeof component.refreshJsonFileTraitOptions === "function") {
         component.refreshJsonFileTraitOptions();
       }
-
-      component.highchartsInitialized = false;
-      component.trigger && component.trigger("change:script");
       refreshedComponents += 1;
       return;
     }
 
     if (componentType === "json-table") {
-      const jsonPath = String(component.get("json-path") || "").trim();
-      if (!jsonPath) return;
-
-      const shouldPreferExistingRenderedState =
-        hasRenderableJsonTableState(component) &&
-        (
-          String(component.get("filter-column") || "").trim() === "none" ||
-          Array.isArray(component.get("custom-data")) ||
-          String(component.get("filter-value") || "").trim() !== "" ||
-          component.get("show-placeholder") === false
+      const jsonPath = String(component.get("json-path") || attrs["my-input-json"] || "").trim();
+      if (jsonPath) {
+        persistDatasourceStateToAttrs(
+          component,
+          jsonPath,
+          String(component.get("json-file-index") || attrs["data-json-file-index"] || "0").trim() || "0"
         );
-
-      if (typeof component.updateFilterColumnOptions === "function") {
-        component.updateFilterColumnOptions();
       }
-      if (typeof component.updateRunningTotalColumnOptions === "function") {
-        component.updateRunningTotalColumnOptions();
-      }
-
-      if (shouldPreferExistingRenderedState) {
-        component.set?.("show-placeholder", false, { silent: true });
-        if (typeof component.updateDataJsonState === "function") {
-          component.updateDataJsonState();
-        }
-        if (typeof component.updateTableHTML === "function") {
-          component.updateTableHTML();
-        }
-      } else {
-        if (typeof component.updateTableFromJson === "function") {
-          component.updateTableFromJson();
-        } else if (component.trigger) {
-          component.trigger("change:json-path");
-        }
-        reapplyJsonTablePreviewState(component);
-      }
-
       refreshedComponents += 1;
       return;
     }
@@ -5758,26 +5889,6 @@ function updateComponentsWithNewJson(editor) {
     }
     persistDatasourceStateToAttrs(component, jsonPath, jsonFileIndex);
 
-    if (typeof component.updateFromJsonPath === "function") {
-      component.updateFromJsonPath(jsonPath);
-      refreshedComponents += 1;
-      return;
-    }
-
-    if (typeof component.handleJsonPathChange === "function") {
-      component.handleJsonPathChange();
-      if (typeof component.renderBarcodeFromConfig === "function") {
-        component.renderBarcodeFromConfig();
-      }
-      refreshedComponents += 1;
-      return;
-    }
-
-    const commonJson = getJsonDataByFileIndex(jsonFileIndex);
-    const resolvedContent = resolveTextContentFromDatasource(component, jsonPath, commonJson);
-    if (resolvedContent === undefined) return;
-
-    applyResolvedTextContent(component, resolvedContent);
     refreshedComponents += 1;
   });
 

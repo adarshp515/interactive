@@ -10719,6 +10719,7 @@ padding: 8px;
       "flex-direction": "column",
       height: `${contentHeight}px`,
       width: `${contentWidth}px`,
+      margin: `${marginTopPx}px ${marginRightPx}px ${marginBottomPx}px ${marginLeftPx}px`,
       position: "relative",
       "background-color":
         pageSettings.backgroundColor || this.pageSettings.backgroundColor,

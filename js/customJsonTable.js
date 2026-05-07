@@ -1608,12 +1608,12 @@ function jsontablecustom(editor) {
                     }
 
                     if (tableData && tableData.heading && tableData.data) {
-                        this.set('table-headers', tableData.heading);
-                        this.set('table-data', tableData.data);
-                        this.set('custom-headers', null);
-                        this.set('custom-data', null);
-                        this.set('show-placeholder', true);
-                        this.updateTableHTML();
+	                        this.set('table-headers', tableData.heading);
+	                        this.set('table-data', tableData.data);
+	                        this.set('custom-headers', null);
+	                        this.set('custom-data', null);
+	                        this.set('show-placeholder', false);
+	                        this.updateTableHTML();
                         this.updateFilterColumnOptions();
                         this.updateRunningTotalColumnOptions();
                     } else {
@@ -2206,7 +2206,9 @@ function jsontablecustom(editor) {
                     };
 
                     this.addAttributes({
-                        'data-json-state': encodeURIComponent(JSON.stringify(_stateForDom))
+                        'data-json-state': encodeURIComponent(JSON.stringify(_stateForDom)),
+                        'my-input-json': this.get('json-path') || '',
+                        'data-json-file-index': this.get('json-file-index') || '0'
                     });
 
                     this.components().reset();
@@ -2237,7 +2239,9 @@ function jsontablecustom(editor) {
                 })();
 
                 this.addAttributes({
-                    'data-json-state': encodeURIComponent(JSON.stringify(_stateForDom))
+                    'data-json-state': encodeURIComponent(JSON.stringify(_stateForDom)),
+                    'my-input-json': this.get('json-path') || '',
+                    'data-json-file-index': this.get('json-file-index') || '0'
                 });
 
                 const name = this.get('name') || 'Table';
@@ -2269,6 +2273,12 @@ function jsontablecustom(editor) {
                     selectable: false,
                     layerable: false,
                     classes: ['json-table-wrapper'],
+                    attributes: {
+                        'my-input-json': this.get('json-path') || '',
+                        'data-json-file-index': this.get('json-file-index') || '0',
+                        'data-json-state': encodeURIComponent(JSON.stringify(_stateForDom)),
+                        'data-source-table-id': sharedTableId,
+                    },
                     style: {
                         'width': '99.5%',
                         'padding-top': '10px',
@@ -2309,12 +2319,14 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
                         id: tableId,
                         width: '100%',
                         'data-source-table-id': sharedTableId,
+                        'my-input-json': this.get('json-path') || '',
+                        'data-json-file-index': this.get('json-file-index') || '0',
+                        'data-json-state': encodeURIComponent(JSON.stringify(_stateForDom)),
                     },
                     style: {
                         'width': '100%',
                         'border-collapse': 'collapse',
-                        'font-family': 'Arial, sans-serif',
-                        'my-input-json': this.get('json-path') || ''
+                        'font-family': 'Arial, sans-serif'
                     }
                 });
                 if (caption === 'yes' && name) {
@@ -2406,7 +2418,9 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
                 };
 
                 this.addAttributes({
-                    'data-json-state': encodeURIComponent(JSON.stringify(_stateForDom))
+                    'data-json-state': encodeURIComponent(JSON.stringify(_stateForDom)),
+                    'my-input-json': this.get('json-path') || '',
+                    'data-json-file-index': this.get('json-file-index') || '0'
                 });
             },
 
@@ -3586,9 +3600,21 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
                         });
                     });
                 }
-            },
+	            },
 
-            addTableHeader(tableComponent, headers, tableId) {
+	            formatJsonTableCellValue(value) {
+	                if (value === undefined || value === null) return '';
+	                if (typeof value === 'object') {
+	                    try {
+	                        return JSON.stringify(value);
+	                    } catch (err) {
+	                        return '';
+	                    }
+	                }
+	                return String(value);
+	            },
+
+	            addTableHeader(tableComponent, headers, tableId) {
                 const theadComponent = tableComponent.components().add({
                     type: 'default',
                     tagName: 'thead',
@@ -3772,7 +3798,7 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
 
                         Object.keys(headers).forEach(key => {
                             const cellId = `${tableId}-summary-${rowIndex}-${key}`;
-                            const displayValue = row[key] !== undefined && row[key] !== null ? row[key] : '';
+	                            const displayValue = this.formatJsonTableCellValue(row[key]);
 
                             const tableStyles = this.get('table-styles-applied');
                             const cellStyles = tableStyles ? {
@@ -3823,7 +3849,7 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
                         }
 
                         const cellId = `${tableId}-cell-${rowIndex}-${key}`;
-                        const displayValue = row[key] || '';
+	                        const displayValue = this.formatJsonTableCellValue(row[key]);
                         const isRunningTotal = key.endsWith('_running_total');
                         const rtConfig = isRunningTotal ? runningTotals.find(rt => `${rt.columnKey}_running_total` === key) : null;
                         const tableStyles = this.get('table-styles-applied');

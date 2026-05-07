@@ -1,11 +1,19 @@
 function exportPlugin(editor) {
   const modal = editor.Modal;
-  function getLiveCanvasDoc(editor) {
-    const iframe = editor.Canvas && editor.Canvas.getFrameEl ? editor.Canvas.getFrameEl() : null;
-    return iframe && (iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document));
-  }
+	  function getLiveCanvasDoc(editor) {
+	    const iframe = editor.Canvas && editor.Canvas.getFrameEl ? editor.Canvas.getFrameEl() : null;
+	    return iframe && (iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document));
+	  }
 
-  function getHtmlWithCurrentFormState(editor) {
+	  function isDatasourceTableOrChartNode(node) {
+	    if (!node || typeof node.closest !== "function") return false;
+	    return Boolean(
+	      node.matches?.(".json-table-container, .json-table-wrapper, .json-data-table, table, thead, tbody, tfoot, tr, td, th, [data-i_designer-type='custom_line_chart'], [data-gjs-type='custom_line_chart'], .highchart-live-areaspline") ||
+	      node.closest(".json-table-container, .json-table-wrapper, .json-data-table, table, [data-i_designer-type='custom_line_chart'], [data-gjs-type='custom_line_chart'], .highchart-live-areaspline")
+	    );
+	  }
+
+	  function getHtmlWithCurrentFormState(editor) {
     const baseHtml = editor.getHtml();
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = baseHtml;
@@ -103,18 +111,26 @@ function exportPlugin(editor) {
       }
     });
 
-    liveDoc.body.querySelectorAll("[id]").forEach((liveNode) => {
-      const exportNode = exportNodesById.get(liveNode.id);
-      if (!exportNode) return;
+	  liveDoc.body.querySelectorAll("[id]").forEach((liveNode) => {
+	    const exportNode = exportNodesById.get(liveNode.id);
+	    if (!exportNode) return;
+	    if (isDatasourceTableOrChartNode(liveNode)) return;
 
-      if (
-        liveNode.hasAttribute("contenteditable") ||
-        liveNode.hasAttribute("data-template-text") ||
-        liveNode.hasAttribute("my-input-json")
-      ) {
-        exportNode.innerHTML = liveNode.innerHTML;
-        return;
-      }
+	    if (
+	      liveNode.hasAttribute("contenteditable") ||
+	      liveNode.hasAttribute("data-template-text") ||
+	      liveNode.hasAttribute("my-input-json")
+	    ) {
+	      if (
+	        liveNode.hasAttribute("my-input-json") &&
+	        typeof resolveDataBoundExportContent === "function"
+	      ) {
+	        exportNode.innerHTML = resolveDataBoundExportContent(liveNode) || liveNode.innerHTML;
+	      } else {
+	        exportNode.innerHTML = liveNode.innerHTML;
+	      }
+	      return;
+	    }
 
       if (exportNode.innerHTML !== liveNode.innerHTML && shouldSyncTextNodeContent(exportNode, liveNode)) {
         exportNode.innerHTML = liveNode.innerHTML;

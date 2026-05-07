@@ -840,6 +840,29 @@ function addFormattedRichTextComponent(editor) {
     }, source);
   }
 
+  function getDatasourceJsonByFileIndex(fileIndex) {
+    try {
+      const normalizedIndex = String(fileIndex == null ? '0' : fileIndex).trim() || '0';
+      if (normalizedIndex !== '0') {
+        const fileNames = (localStorage.getItem('common_json_files') || '')
+          .split(',')
+          .map(f => f.trim())
+          .filter(Boolean);
+        const selectedFile = fileNames[parseInt(normalizedIndex, 10) - 1];
+        if (selectedFile) {
+          const jsonString = localStorage.getItem(`common_json_${selectedFile}`);
+          if (jsonString) return JSON.parse(jsonString);
+        }
+      }
+
+      const jsonString = localStorage.getItem('common_json');
+      if (jsonString) return JSON.parse(jsonString);
+    } catch (e) {
+      return null;
+    }
+    return null;
+  }
+
   function getPlaceholderCandidatesFromPath(path) {
     const tokens = tokenizeDatasourcePath(path);
     if (tokens.length <= 1) return [];
@@ -1009,13 +1032,44 @@ function addFormattedRichTextComponent(editor) {
             }
           }
           this.set('json-file-index', fileIndex, { silent: true });
-          this.addAttributes({
-            'my-input-json': jsonPath,
-            'data-json-file-index': fileIndex
-          });
+	          this.addAttributes({
+	            'my-input-json': jsonPath,
+	            'data-json-file-index': fileIndex
+	          });
 
-          /* ===============================
-             JSON SOURCE RESOLUTION
+	          const templateSource =
+	            typeof getComponentTemplateSource === 'function'
+	              ? getComponentTemplateSource(this)
+	              : (
+	                this.get('templateText') ||
+	                this.get('raw-content') ||
+	                this.get('content') ||
+	                this.view?.el?.innerHTML ||
+	                ''
+	              );
+	          const hasTemplate =
+	            typeof hasDatasourceTemplatePlaceholders === 'function'
+	              ? hasDatasourceTemplatePlaceholders(templateSource)
+	              : /{[^{}]+}/.test(String(templateSource || ''));
+
+	          if (hasTemplate) {
+	            if (typeof setComponentTemplateText === 'function') {
+	              setComponentTemplateText(this, templateSource);
+	            } else {
+	              this.set('templateText', templateSource, { silent: true });
+	            }
+
+              this.set('raw-content', templateSource, { silent: true });
+              this.set('content', templateSource, { silent: true });
+              if (this.view && this.view.el) {
+                this.view.el.innerHTML = templateSource;
+              }
+	          }
+
+	          return;
+
+	          /* ===============================
+	             JSON SOURCE RESOLUTION
           =============================== */
           let commonJson = null;
 
@@ -1494,6 +1548,65 @@ function addFormattedRichTextComponent(editor) {
 
           return;
         }
+
+        const jsonPath = String(
+          this.model?.get?.('my-input-json') ||
+          this.model?.getAttributes?.()?.['my-input-json'] ||
+          ''
+        ).trim();
+
+        if (!jsonPath || !this.el) return;
+
+        const templateText =
+          typeof getComponentTemplateText === 'function'
+            ? getComponentTemplateText(this.model)
+            : (this.model.get('templateText') || this.model.get('raw-content') || this.model.get('content') || '');
+
+        const hasTemplate =
+          typeof hasDatasourceTemplatePlaceholders === 'function'
+            ? hasDatasourceTemplatePlaceholders(templateText)
+            : /{[^{}]+}/.test(String(templateText || ''));
+
+        if (!hasTemplate) return;
+
+        if (this.model.__jsonPreviewActive) {
+          this.el.innerHTML = templateText;
+          this.model.__jsonPreviewActive = false;
+          return;
+        }
+
+        const fileIndex = String(
+          this.model?.get?.('json-file-index') ||
+          this.model?.get?.('jsonFileIndex') ||
+          this.model?.getAttributes?.()?.['data-json-file-index'] ||
+          '0'
+        ).trim() || '0';
+
+        const commonJson = getDatasourceJsonByFileIndex(fileIndex);
+        if (!commonJson) return;
+
+        const jsonPaths = jsonPath.split(',').map(p => p.trim()).filter(Boolean);
+        if (!jsonPaths.length) return;
+
+        let updatedContent = templateText;
+        jsonPaths.forEach(path => {
+          const value = resolveDatasourcePathValue(commonJson, path);
+          if (value === undefined || value === null) return;
+
+          const placeholderCandidates = getPlaceholderCandidatesFromPath(path);
+          if (!placeholderCandidates.length) return;
+
+          placeholderCandidates.forEach((placeholderToken) => {
+            const placeholder = `{${placeholderToken}}`;
+            const escaped = placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            updatedContent = updatedContent.replace(new RegExp(escaped, 'g'), String(value));
+          });
+        });
+
+        if (updatedContent !== templateText) {
+          this.model.__jsonPreviewActive = true;
+          this.el.innerHTML = updatedContent;
+        }
       },
 
       handleEditingChange() {
@@ -1566,7 +1679,6 @@ function addFormattedRichTextComponent(editor) {
 
           this.model.enableRTE();
         };
-
         setTimeout(startEditing, 10);
       },
 
@@ -2031,16 +2143,7 @@ function addFormattedRichTextComponent(editor) {
         }
         this.model.disableRTE();
 
-        if (this.model.get('my-input-json') && (hasEditedTemplate || hadStoredTemplate)) {
-          setTimeout(() => {
-            if (typeof this.model.handleJsonPathChange === 'function') {
-              this.model.handleJsonPathChange();
-            } else if (typeof window.rebindAllDatasourceComponents === 'function') {
-              window.rebindAllDatasourceComponents('formatted-rich-text-template-edit');
-            }
-          }, 0);
-        }
-      },
+	      },
 
       onRender() {
 
