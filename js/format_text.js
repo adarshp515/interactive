@@ -2026,16 +2026,23 @@ function addFormattedRichTextComponent(editor) {
             // User edited content and it still has placeholders — save it
             setComponentTemplateText(this.model, content);
           } else if (hadStoredTemplate) {
-            // Content no longer has placeholders (e.g. resolved by datasource)
-            // but there WAS a stored template — preserve it for bulk export
-            setComponentTemplateText(this.model, previousTemplateText);
+            // User removed all placeholders while editing the raw template.
+            // Clear the stored template so blur/rebind does not resurrect it.
+            setComponentTemplateText(this.model, '');
           }
           // Otherwise: no template, don't set anything
         } else {
           this.model.set('templateText',
-            hasEditedTemplate ? content : (hadStoredTemplate ? previousTemplateText : ''),
+            hasEditedTemplate ? content : '',
             { silent: true }
           );
+        }
+
+        if (hadStoredTemplate && !hasEditedTemplate) {
+          this.model.set('my-input-json', '', { silent: true });
+          if (typeof this.model.removeAttributes === 'function') {
+            this.model.removeAttributes('my-input-json');
+          }
         }
         this.model.set('raw-content', content, { silent: true });
         this.model.set('content', content, { silent: true });
@@ -2077,7 +2084,7 @@ function addFormattedRichTextComponent(editor) {
         }
         this.model.disableRTE();
 
-        if (this.model.get('my-input-json') && (hasEditedTemplate || hadStoredTemplate)) {
+        if (this.model.get('my-input-json') && hasEditedTemplate) {
           setTimeout(() => {
             if (typeof this.model.handleJsonPathChange === 'function') {
               this.model.handleJsonPathChange();

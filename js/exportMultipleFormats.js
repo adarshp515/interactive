@@ -655,12 +655,79 @@ function exportPlugin(editor) {
     console.debug("[DOCX Export] Rasterized SVG images", { rasterizedSvgCount });
   }
 
+  function convertFlowLayoutsToWordTables(container) {
+    if (!container) return;
+
+    let convertedFlowLayouts = 0;
+
+    container.querySelectorAll('.flow-layout').forEach((layout) => {
+      const columns = Array.from(layout.children || []).filter((child) =>
+        child.classList && child.classList.contains('flow-col')
+      );
+
+      if (!columns.length) return;
+
+      const table = document.createElement('table');
+      table.className = 'flow-layout-docx-table';
+      table.setAttribute('border', '0');
+      table.setAttribute('cellpadding', '0');
+      table.setAttribute('cellspacing', '0');
+      table.style.width = '100%';
+      table.style.maxWidth = '100%';
+      table.style.tableLayout = 'fixed';
+      table.style.borderCollapse = 'collapse';
+      table.style.borderSpacing = '0';
+      table.style.border = 'none';
+      table.style.borderWidth = '0';
+      table.style.outline = 'none';
+      table.style.boxShadow = 'none';
+      table.style.margin = layout.style.margin || '0 0 8pt 0';
+
+      const row = document.createElement('tr');
+      row.style.border = 'none';
+      row.style.borderWidth = '0';
+
+      const columnWidth = `${(100 / columns.length).toFixed(4)}%`;
+
+      columns.forEach((column, index) => {
+        const cell = document.createElement('td');
+        cell.className = 'flow-layout-docx-cell';
+        cell.setAttribute('valign', 'top');
+        cell.style.width = columnWidth;
+        cell.style.verticalAlign = 'top';
+        cell.style.border = 'none';
+        cell.style.borderWidth = '0';
+        cell.style.borderColor = 'transparent';
+        cell.style.outline = 'none';
+        cell.style.boxShadow = 'none';
+        cell.style.padding = index === columns.length - 1 ? '0' : '0 8pt 0 0';
+        cell.style.margin = '0';
+
+        const content = column.querySelector('.flow-content') || column;
+        Array.from(content.childNodes || []).forEach((child) => {
+          cell.appendChild(child.cloneNode(true));
+        });
+
+        row.appendChild(cell);
+      });
+
+      table.appendChild(row);
+      layout.parentNode && layout.parentNode.replaceChild(table, layout);
+      convertedFlowLayouts++;
+    });
+
+    console.debug('[DOCX Export] Converted FlowLayouts to Word tables', {
+      convertedFlowLayouts,
+    });
+  }
+
   async function prepareWordExportContainer(editor) {
     const tempDiv = await prepareRichExportContainer(editor, {
       rasterizeSvg: true,
     });
 
     await rasterizeSvgImagesForWord(tempDiv, editor);
+    convertFlowLayoutsToWordTables(tempDiv);
 
     let preparedWordImages = 0;
 
@@ -722,7 +789,7 @@ function exportPlugin(editor) {
       el.style.breakInside = 'auto';
     });
 
-    tempDiv.querySelectorAll('.flow-layout, .flow-layout table, .flow-layout tr, .flow-layout td, .flow-layout th, .flow-col, .flow-content').forEach((el) => {
+    tempDiv.querySelectorAll('.flow-layout, .flow-layout table, .flow-layout tr, .flow-layout td, .flow-layout th, .flow-col, .flow-content, .flow-layout-docx-table, .flow-layout-docx-table tr, .flow-layout-docx-table td').forEach((el) => {
       el.style.border = 'none';
       el.style.borderWidth = '0';
       el.style.borderColor = 'transparent';
@@ -730,7 +797,7 @@ function exportPlugin(editor) {
       el.style.boxShadow = 'none';
     });
 
-    tempDiv.querySelectorAll('.flow-layout table').forEach((el) => {
+    tempDiv.querySelectorAll('.flow-layout table, .flow-layout-docx-table').forEach((el) => {
       el.style.borderCollapse = 'collapse';
       el.style.borderSpacing = '0';
     });
@@ -1301,6 +1368,9 @@ function exportPlugin(editor) {
             .flow-layout tr,
             .flow-layout td,
             .flow-layout th,
+            .flow-layout-docx-table,
+            .flow-layout-docx-table tr,
+            .flow-layout-docx-table td,
             .flow-col,
             .flow-content {
               border: none !important;
@@ -1309,9 +1379,20 @@ function exportPlugin(editor) {
               outline: none !important;
               box-shadow: none !important;
             }
-            .flow-layout table {
+            .flow-layout table,
+            .flow-layout-docx-table {
               border-collapse: collapse !important;
               border-spacing: 0 !important;
+              table-layout: fixed !important;
+              width: 100% !important;
+            }
+            .flow-layout-docx-cell {
+              vertical-align: top !important;
+              border: none !important;
+              border-width: 0 !important;
+              border-color: transparent !important;
+              outline: none !important;
+              box-shadow: none !important;
             }
             img { max-width: 375pt; }
             ${css}

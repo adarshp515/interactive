@@ -6325,14 +6325,16 @@ editor.on("rte:disable", (view) => {
       id: component?.getId?.(),
     });
   } else {
-    // Keep the last stored template text so exports still resolve template bindings.
-    const preservedTemplate = getComponentTemplateText(component);
-    if (preservedTemplate) {
-      setComponentTemplateText(component, preservedTemplate);
-      console.debug('[RTE] preserved existing template markup', {
-        id: component?.getId?.(),
-      });
+    setComponentTemplateText(component, "");
+    if (component?.set) {
+      component.set("my-input-json", "", { silent: true });
     }
+    if (component?.removeAttributes) {
+      component.removeAttributes("my-input-json");
+    }
+    console.debug('[RTE] cleared template markup after placeholder removal', {
+      id: component?.getId?.(),
+    });
   }
 
   const jsonPath = String(
@@ -6341,7 +6343,7 @@ editor.on("rte:disable", (view) => {
     ""
   ).trim();
 
-  if (jsonPath) {
+  if (jsonPath && hasEditedTemplate) {
     scheduleDatasourceRebind("rte-template-restore", 0);
   }
 
