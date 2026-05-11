@@ -558,6 +558,18 @@ function exportPlugin(editor) {
       .replace(/break-(before|after|inside)\s*:\s*[^;}{]+;?/gi, "");
   }
 
+  async function waitForExportLayoutStability(delayMs = 300) {
+    try {
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
+    } catch (err) {
+      // Font readiness is best-effort; continue with timed stabilization.
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+
   async function prepareWordExportContainer(editor) {
     const tempDiv = await prepareRichExportContainer(editor);
 
@@ -619,6 +631,19 @@ function exportPlugin(editor) {
       el.style.marginBottom = '8pt';
       el.style.pageBreakInside = 'auto';
       el.style.breakInside = 'auto';
+    });
+
+    tempDiv.querySelectorAll('.flow-layout, .flow-layout table, .flow-layout tr, .flow-layout td, .flow-layout th, .flow-col, .flow-content').forEach((el) => {
+      el.style.border = 'none';
+      el.style.borderWidth = '0';
+      el.style.borderColor = 'transparent';
+      el.style.outline = 'none';
+      el.style.boxShadow = 'none';
+    });
+
+    tempDiv.querySelectorAll('.flow-layout table').forEach((el) => {
+      el.style.borderCollapse = 'collapse';
+      el.style.borderSpacing = '0';
     });
 
     tempDiv.querySelectorAll('p, div, section, article, figure, table, ul, ol').forEach((el) => {
@@ -1157,8 +1182,25 @@ function exportPlugin(editor) {
         <head>
           <style>
             body { font-family: Arial, sans-serif; }
-            table, td, th { border: 1px solid #000; border-collapse: collapse; }
+            table { border-collapse: collapse; }
             td, th { padding: 8px; }
+            .flow-layout,
+            .flow-layout table,
+            .flow-layout tr,
+            .flow-layout td,
+            .flow-layout th,
+            .flow-col,
+            .flow-content {
+              border: none !important;
+              border-width: 0 !important;
+              border-color: transparent !important;
+              outline: none !important;
+              box-shadow: none !important;
+            }
+            .flow-layout table {
+              border-collapse: collapse !important;
+              border-spacing: 0 !important;
+            }
             img { max-width: 375pt; }
             ${css}
             ${getRichExportStyleOverrides({ imageMaxWidthPt: 375 })}
@@ -1402,6 +1444,8 @@ function exportPlugin(editor) {
     document.body.appendChild(overlay);
 
     try {
+      await waitForExportLayoutStability();
+
       const tempDiv = document.createElement("div");
       tempDiv.innerHTML = html;
 
@@ -1476,9 +1520,21 @@ function exportPlugin(editor) {
           <meta charset="utf-8" />
           ${externalStyles}
           ${externalScripts}
-          <style>${sanitizeRichExportCss(css)} ${getRichExportStyleOverrides({ imageMaxWidthPt: 375 })}</style>
+          <style>
+            .single-page-pdf-export-root {
+              display: block;
+              box-sizing: border-box;
+              overflow: visible;
+              padding-bottom: 40px;
+            }
+            .single-page-pdf-export-root > .page-container:last-child {
+              margin-bottom: 40px !important;
+            }
+            ${sanitizeRichExportCss(css)}
+            ${getRichExportStyleOverrides({ imageMaxWidthPt: 375 })}
+          </style>
         </head>
-        <body>${tempDiv.innerHTML}</body>
+        <body><div class="single-page-pdf-export-root">${tempDiv.innerHTML}</div></body>
       </html>
     `;
 

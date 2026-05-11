@@ -5424,7 +5424,6 @@ padding: 8px;
             page-break-after: always !important;
             page-break-inside: avoid !important;
             margin: 0 !important;
-            padding: 0 !important;
             box-shadow: none !important;
             border: none !important;
             width: 100% !important;
@@ -5445,8 +5444,6 @@ padding: 8px;
           .page-content {
             width: 100% !important;
             height: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
             position: relative !important;
             overflow: hidden !important;
             display: flex !important;
@@ -10121,7 +10118,7 @@ padding: 8px;
         <div class="page-container" data-page-id="${pageData.id || `page-${pageNumber}`}" data-page-index="${i}">
           <div class="page-content" style="
             height: ${contentHeight}px; 
-            margin: ${marginTopPx}px ${marginRightPx}px ${marginBottomPx}px ${marginLeftPx}px;
+            width: ${contentWidth}px;
             position: relative;
             overflow: hidden;
             background-color: ${pageData.backgroundColor || this.pageSettings.backgroundColor};
@@ -10192,6 +10189,7 @@ padding: 8px;
               background:
                 pageData.backgroundColor || this.pageSettings.backgroundColor,
               margin: "20px auto",
+              padding: `${marginTopPx}px ${marginRightPx}px ${marginBottomPx}px ${marginLeftPx}px`,
               "box-shadow": "0 4px 12px rgba(0, 0, 0, 0.15)",
               border: "2px solid transparent",
               position: "relative",
@@ -10218,6 +10216,7 @@ padding: 8px;
                 display: "flex",
                 "flex-direction": "column",
                 height: `${contentHeight}px`,
+                width: `${contentWidth}px`,
                 "background-color":
                   pageData.backgroundColor || this.pageSettings.backgroundColor,
                 "-webkit-print-color-adjust": "exact",
@@ -10713,6 +10712,14 @@ padding: 8px;
     );
     const mainContentHeight =
       contentHeight - defaultHeaderHeight - defaultFooterHeight;
+
+    pageComponent.addStyle({
+      width: `${totalPageWidth}px`,
+      height: `${totalPageHeight}px`,
+      padding: `${marginTopPx}px ${marginRightPx}px ${marginBottomPx}px ${marginLeftPx}px`,
+      "box-sizing": "border-box",
+      overflow: "hidden",
+    });
 
     pageContentComponent.addStyle({
       display: "flex",
@@ -11682,7 +11689,19 @@ padding: 8px;
       }
     } catch (err) {}
 
-    if (!this.pageSettings.pageNumber?.enabled) {
+    const pageNumberEnabled = !!this.pageSettings.pageNumber?.enabled;
+    if (pageComponent.addAttributes) {
+      pageComponent.addAttributes({
+        "data-page-number-enabled": pageNumberEnabled ? "true" : "false",
+      });
+    } else if (pageComponent.setAttribute) {
+      pageComponent.setAttribute(
+        "data-page-number-enabled",
+        pageNumberEnabled ? "true" : "false",
+      );
+    }
+
+    if (!pageNumberEnabled) {
       return;
     }
 
@@ -12193,7 +12212,7 @@ padding: 8px;
       <div class="page-container" data-page-id="${newPageId}" data-page-index="${newPageIndex}">
         <div class="page-content" style="
           height: ${contentHeight}px;
-          margin: ${marginTopPx}px ${marginRightPx}px ${marginBottomPx}px ${marginLeftPx}px;
+          width: ${contentWidth}px;
           position: relative;
           overflow: hidden;
           background-color: ${newPageSettings.backgroundColor};
@@ -12256,6 +12275,7 @@ padding: 8px;
         height: `${totalPageHeight}px`,
         background: newPageSettings.backgroundColor,
         margin: "20px auto",
+        padding: `${marginTopPx}px ${marginRightPx}px ${marginBottomPx}px ${marginLeftPx}px`,
         "box-shadow": "0 4px 12px rgba(0, 0, 0, 0.15)",
         border: "2px solid transparent",
         position: "relative",

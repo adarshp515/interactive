@@ -1,0 +1,581 @@
+{  
+   "english":{
+            "name":"Mr Manmeet",
+      "VI":[
+         {
+            "name":"Mr Manmeet",
+            "address1":"Building2",
+            "address2":"Road no 34",
+            "address3":"Name, Landmark21, Location1, Ahmedabad, Gujrat, 387710",
+			"VI_NO":"0987654321",
+			"YourPlan":"Vi Max Family 871",
+			"BillCycleDate":"01-03-2026",
+			"InvoiceDate":"01-03-2026",
+			"BillPeriod":"01-02-2026 to 31-03-2026",
+			"InvoiceNo":"GJI0608175264152",
+			"AccountNo":"3252525212",
+			"CreditLimit": "1,50,000.00",
+			"Security": "1,250.00",
+			"CustomerGSTNo": "2345678912",
+			
+			"PreviousBill":"Rs. 0.00",
+			"PaymentLastOneMonth":"Rs. 40.00",
+			"Adjustments":"Rs. -100.00",
+			"CurrentBillCharges":"Rs. 82,282.06",
+			"CurrentPayableAmount":"Rs. 82,142.06",
+			"PayableAfter":"82,642.06",
+			
+			
+			"TotalDues":"₹82,282.06",
+			"DueDate":"5 days left",
+			"DateUsed":"7.8 GB",
+			"CallsMade":"379 Min"
+         }
+      ] ,  
+	     "drilldown_pie_chart": { 
+        "series" : [ 
+          {
+            "name": "Browsers",
+            "colorByPoint": true,
+            "data": [
+                {
+                    "name": "Calls Usage",
+                    "y": 61.04,
+                    "drilldown": "CallsUsage"
+                  },
+                  {
+                    "name": "Data Usage",
+                    "y": 9.47,
+                    "drilldown": "DataUsage"
+                  },
+                  {
+                    "name": "Other",
+                    "y": 11.02,
+                    "drilldown": null
+                  } 
+          ]
+        }
+        ],
+        "drilldown": {
+        "series": [
+          {
+            "name": "Calls Usages",
+            "id": "CallsUsage",
+            "data": [
+              [
+                "Domestic Calls",
+                36.89
+              ],
+              [
+                "International Calls",
+                18.16
+              ]
+             
+            ]
+          },
+          {
+            "name": "Data Usage",
+            "id": "DataUsage",
+            "data": [
+             [
+                "Domestic Calls",
+                36.89
+              ],
+              [
+                "International Calls",
+                18.16
+              ]
+            ]
+          }
+        ]
+        }  
+      }, 
+      "pie_chart":{  
+        "series" : [{  
+              "data":  [{
+                 "name": "Plans ₹9999", 
+                 "y": 9999 
+              },
+              {
+                 "name": "Tax ₹1549", 
+                 "y": 1549
+              },
+              {
+                 "name": "Roaming ₹899", 
+                 "y": 899 
+              } ]
+        }
+        ] 
+      },
+	   "3D_column_chart":{ 
+       "xAxis": {
+          "categories": ["Jan", "Feb", "Mar", "Apr", "May"] 
+        },  
+        "series": [{
+          "name": "Year 1990",
+          "data": [831, 787, 3202, 721, 26]
+        }, {
+          "name": "Year 2000",
+          "data": [814, 841, 3714, 726, 31]
+        }, {
+          "name": "Year 2010",
+          "data": [1044, 944, 4170, 735, 40]
+        }, {
+          "name": "Year 2018",
+          "data": [1276, 1007, 4561, 746, 42]
+        }]  
+      },
+	   "drilldown_bar_chart":{
+          "series" : [ 
+            {
+              "name": "Browsers",
+              "colorByPoint": true,
+              "data": [
+                  {
+                      "name": "Highest Month",
+                      "y": 61.04,
+                      "drilldown": "highestMonth"
+                    },
+                    {
+                      "name": "Lowest Month",
+                      "y": 9.47,
+                      "drilldown": "lowestMonth"
+                    } 
+            ]
+          }
+          ],
+          "drilldown": {
+          "series": [
+            {
+              "name": "Highest Month",
+              "id": "highestMonth",
+              "data": [
+                [
+                  "v97.0",
+                  36.89
+                ],
+                [
+                  "v96.0",
+                  18.16
+                ],
+                [
+                  "v95.0",
+                  0.54
+                ],
+                [
+                  "v56.0",
+                  0.12
+                ],
+                [
+                  "v49.0",
+                  0.17
+                ]
+              ]
+            },
+            {
+              "name": "Lowest Month",
+              "id": "lowestMonth",
+              "data": [
+                [
+                  "v15.3",
+                  0.1
+                ],
+                [
+                  "v15.2",
+                  2.01
+                ],
+                [
+                  "v15.1",
+                  2.29
+                ],
+                [
+                  "v15.0",
+                  0.49
+                ],
+                [
+                  "v14.1",
+                  2.48
+                ],
+                [
+                  "v14.0",
+                  0.64
+                ],
+                [
+                  "v13.1",
+                  1.17
+                ],
+                [
+                  "v13.0",
+                  0.13
+                ],
+                [
+                  "v12.1",
+                  0.16
+                ]
+              ]
+            }
+          ]
+          } 
+      },      
+    
+    "transactions1Tbl": {
+      "heading": {
+        "Qty": "Qty",
+        "Description": "Description",
+        "GrossAmount": "Gross Amount",
+        "Discount": "Discount",
+        "NetAmountMRP": "Net Amount MRP",
+        "TaxType": "Tax Type",
+        "TaxRate": "Tax Rate",
+        "TaxAmount": "Tax Amount"
+      },
+      "data": [
+        {
+          "Qty": "1",
+          "Description": "Levi's Fluorescent Green Pure Cotton Printed T-Shirt",
+          "GrossAmount": "1056.00",
+          "Discount": "1143.00",
+          "NetAmountMRP": "2199.00",
+          "TaxType": "GST",
+          "TaxRate": "5%",
+          "TaxAmount": "1108.80"
+        },
+        {
+          "Qty": "2",
+          "Description": "Levi's Light Green Levi's Light Green",
+          "GrossAmount": "1488.00",
+          "Discount": "1611.00",
+          "NetAmountMRP": "3099.00",
+          "TaxType": "GST",
+          "TaxRate": "5%",
+          "TaxAmount": "1562.40"
+        },
+        {
+          "Qty": "3",
+          "Description": "Utsa Kids by Westside Green Floral Print Dress",
+          "GrossAmount": "799.00",
+          "Discount": "00.00",
+          "NetAmountMRP": "799.00",
+          "TaxType": "GST",
+          "TaxRate": "5%",
+          "TaxAmount": "838.95"
+        },
+        {
+          "Qty": "4",
+          "Description": "Utsa Kids by Westside Green Floral Print Dress",
+          "GrossAmount": "799.00",
+          "Discount": "00.00",
+          "NetAmountMRP": "799.00",
+          "TaxType": "GST",
+          "TaxRate": "5%",
+          "TaxAmount": "838.95"
+        },
+        {
+          "Qty": "5",
+          "Description": "Utsa Kids by Westside Green Floral Print Dress",
+          "GrossAmount": "799.00",
+          "Discount": "00.00",
+          "NetAmountMRP": "799.00",
+          "TaxType": "GST",
+          "TaxRate": "5%",
+          "TaxAmount": "838.95"
+        },
+        {
+          "Qty": "6",
+          "Description": "Utsa Kids by Westside Green Floral Print Dress",
+          "GrossAmount": "799.00",
+          "Discount": "00.00",
+          "NetAmountMRP": "799.00",
+          "TaxType": "GST",
+          "TaxRate": "5%",
+          "TaxAmount": "838.95"
+        },
+        {
+          "Qty": "7",
+          "Description": "Utsa Kids by Westside Green Floral Print Dress",
+          "GrossAmount": "799.00",
+          "Discount": "00.00",
+          "NetAmountMRP": "799.00",
+          "TaxType": "GST",
+          "TaxRate": "5%",
+          "TaxAmount": "838.95"
+        },
+        {
+          "Qty": "8",
+          "Description": "Utsa Kids by Westside Green Floral Print Dress",
+          "GrossAmount": "799.00",
+          "Discount": "00.00",
+          "NetAmountMRP": "799.00",
+          "TaxType": "GST",
+          "TaxRate": "5%",
+          "TaxAmount": "838.95"
+        },
+        {
+          "Qty": "9",
+          "Description": "Utsa Kids by Westside Green Floral Print Dress",
+          "GrossAmount": "799.00",
+          "Discount": "00.00",
+          "NetAmountMRP": "799.00",
+          "TaxType": "GST",
+          "TaxRate": "5%",
+          "TaxAmount": "838.95"
+        },
+        {
+          "Qty": "10",
+          "Description": "Utsa Kids by Westside Green Floral Print Dress",
+          "GrossAmount": "799.00",
+          "Discount": "00.00",
+          "NetAmountMRP": "799.00",
+          "TaxType": "GST",
+          "TaxRate": "5%",
+          "TaxAmount": "838.95"
+        },
+        {
+          "Qty": "11",
+          "Description": "Utsa Kids by Westside Green Floral Print Dress",
+          "GrossAmount": "799.00",
+          "Discount": "00.00",
+          "NetAmountMRP": "799.00",
+          "TaxType": "GST",
+          "TaxRate": "5%",
+          "TaxAmount": "838.95"
+        },
+        {
+          "Qty": "12",
+          "Description": "Utsa Kids by Westside Green Floral Print Dress",
+          "GrossAmount": "799.00",
+          "Discount": "00.00",
+          "NetAmountMRP": "799.00",
+          "TaxType": "GST",
+          "TaxRate": "5%",
+          "TaxAmount": "838.95"
+        },
+        {
+          "Qty": "13",
+          "Description": "Shipping",
+          "GrossAmount": "00.00",
+          "Discount": "2754.00",
+          "NetAmountMRP": "00.00",
+          "TaxType": "GST",
+          "TaxRate": "5%",
+          "TaxAmount": "00.00"
+        }
+      ]
+    }
+      ,
+
+
+    "transactionTable2": {
+      "heading": {
+        "DATE_FORMAT": "Date",
+        "DESC": "Description",
+        "CREDIT": "Credit",
+        "DEBIT": "Debit",
+        "BALANCE": "Balance"
+      },
+      "data": [
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "1,693.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,28,459.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "UPI/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "UPI",
+          "CREDIT": "2,480.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,30,939.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "0.00",
+          "DEBIT": "2,393.00",
+          "BALANCE": "1,28,546.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "UPI/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "UPI",
+          "CREDIT": "0.00",
+          "DEBIT": "2,276.00",
+          "BALANCE": "1,26,270.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ECOM/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "2,308.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,28,578.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "UPI/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "UPI",
+          "CREDIT": "2,096.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,30,674.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "2,055.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,32,729.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "0.00",
+          "DEBIT": "2,368.00",
+          "BALANCE": "1,30,361.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "0.00",
+          "DEBIT": "2,435.00",
+          "BALANCE": "1,27,926.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ECOM/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "0.00",
+          "DEBIT": "1,209.00",
+          "BALANCE": "1,26,717.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "UPI/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "UPI",
+          "CREDIT": "2,287.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,29,004.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "0.00",
+          "DEBIT": "2,419.00",
+          "BALANCE": "1,26,585.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "2,094.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,28,679.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ECOM/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "0.00",
+          "DEBIT": "1,189.00",
+          "BALANCE": "1,27,490.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "0.00",
+          "DEBIT": "1,024.00",
+          "BALANCE": "1,26,466.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "UPI/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "UPI",
+          "CREDIT": "1,016.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,27,482.00"
+        },
+                {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "2,094.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,28,679.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "ECOM/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "0.00",
+          "DEBIT": "1,189.00",
+          "BALANCE": "1,27,490.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "POS/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "POS",
+          "CREDIT": "0.00",
+          "DEBIT": "1,024.00",
+          "BALANCE": "1,26,466.00"
+        },
+        {
+          "DATE_FORMAT": "2025-05-02",
+          "DATE": "02-MAY-25",
+          "TYPE": "SBA",
+          "DESC": "UPI/XXXXXXXXXXXX/HH:MM/Dummy Data/USFB",
+          "ICON": "UPI",
+          "CREDIT": "1,016.00",
+          "DEBIT": "0.00",
+          "BALANCE": "1,27,482.00"
+        }
+      ]
+    } 
+   }
+}
+ 

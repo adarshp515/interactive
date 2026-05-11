@@ -186,6 +186,9 @@ function jsontablecustom(editor) {
             b: parseInt(result[3], 16)
         } : { r: 0, g: 0, b: 0 };
     }
+    function sanitizeColumnKey(key) {
+        return String(key || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+    }
     function getJsonFileOptions() {
         const storedFileNames = localStorage.getItem('common_json_files');
         const options = [{ id: '0', name: 'Select File' }];
@@ -1937,7 +1940,7 @@ function jsontablecustom(editor) {
                 if (updatedData[rowIndex]) {
                     updatedData[rowIndex] = { ...updatedData[rowIndex], [columnKey]: newValue };
 
-                    const cellId = `cell-${rowIndex}-${columnKey}`;
+                    const cellId = `cell-${rowIndex}-${sanitizeColumnKey(columnKey)}`;
                     this.set('custom-data', updatedData);
                     this.set(`cell-content-${cellId}`, newValue);
                     this.updateSingleCell(rowIndex, columnKey, newValue);
@@ -1954,7 +1957,7 @@ function jsontablecustom(editor) {
                 const tableId = this.cid ? `json-table-${this.cid}` : null;
                 if (!tableId) return;
                 const canvasDoc = editor.Canvas.getDocument();
-                const cellId = `${tableId}-cell-${rowIndex}-${columnKey}`;
+                const cellId = `${tableId}-cell-${rowIndex}-${sanitizeColumnKey(columnKey)}`;
                 const cellElement = canvasDoc.getElementById(cellId);
 
                 if (cellElement) {
@@ -2001,7 +2004,7 @@ function jsontablecustom(editor) {
                 if (!tableId) return;
 
                 const canvasDoc = editor.Canvas.getDocument();
-                const headerId = `${tableId}-header-${columnKey}`;
+                const headerId = `${tableId}-header-${sanitizeColumnKey(columnKey)}`;
                 const headerElement = canvasDoc.getElementById(headerId);
 
                 if (headerElement) {
@@ -2937,7 +2940,9 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
                             cell: cell,
                             formula: cell.getAttribute('data-formula'),
                             calculatedValue: cell.getAttribute('data-calculated-value'),
-                            id: cell.id || cell.getAttribute('data-row') + '-' + cell.getAttribute('data-column-key')
+                            id: cell.id || null,
+                            row: cell.getAttribute('data-row'),
+                            columnKey: cell.getAttribute('data-column-key')
                         }));
                         
                         if ($.fn.DataTable.isDataTable(tableElement)) {
@@ -2962,8 +2967,8 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
                             drawCallback: function() {
                                 setTimeout(() => {
                                     formulaData.forEach(data => {
-                                        const cell = document.getElementById(data.id) ||
-                                                tableElement.querySelector('[data-row="' + data.id.split('-')[0] + '"][data-column-key="' + data.id.split('-')[1] + '"]');
+                                        const cell = data.id ? document.getElementById(data.id) :
+                                            tableElement.querySelector('[data-row="' + (data.row || '') + '"][data-column-key="' + (data.columnKey || '') + '"]');
                                         if (cell) {
                                             if (data.formula) cell.setAttribute('data-formula', data.formula);
                                             if (data.calculatedValue) {
@@ -3524,7 +3529,8 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
                 });
                 const jsonPath = this.get('json-path') || '';
                 Object.entries(headers).forEach(([key, header]) => {
-                    const headerId = `${tableId}-header-${key}`;
+                    const safeKey = sanitizeColumnKey(key);
+                    const headerId = `${tableId}-header-${safeKey}`;
                     const storedHeader = this.get(`header-content-${key}`) || header;
 
                     const tableStyles = this.get('table-styles-applied');
@@ -3646,7 +3652,8 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
                 });
 
                 Object.keys(headers).forEach(key => {
-                    const headerId = `${tableId}-summary-header-${rowIndex}-${key}`;
+                    const safeKey = sanitizeColumnKey(key);
+                    const headerId = `${tableId}-summary-header-${rowIndex}-${safeKey}`;
                     const tableStyles = this.get('table-styles-applied');
                     const cellStyles = tableStyles ? {
                         'border': `${tableStyles.borderWidth}px ${tableStyles.borderStyle} ${tableStyles.borderColor}`,
@@ -3685,7 +3692,8 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
                         });
 
                         Object.keys(headers).forEach(key => {
-                            const cellId = `${tableId}-summary-${rowIndex}-${key}`;
+                            const safeKey = sanitizeColumnKey(key);
+                            const cellId = `${tableId}-summary-${rowIndex}-${safeKey}`;
                             const displayValue = row[key] !== undefined && row[key] !== null ? row[key] : '';
 
                             const tableStyles = this.get('table-styles-applied');
@@ -3736,7 +3744,8 @@ if (repeatHeadersBeforeSummary && summarizeGroup && groupingFields.length > 0) {
                             return;
                         }
 
-                        const cellId = `${tableId}-cell-${rowIndex}-${key}`;
+                        const safeKey = sanitizeColumnKey(key);
+                        const cellId = `${tableId}-cell-${rowIndex}-${safeKey}`;
                         const displayValue = row[key] || '';
                         const isRunningTotal = key.endsWith('_running_total');
                         const rtConfig = isRunningTotal ? runningTotals.find(rt => `${rt.columnKey}_running_total` === key) : null;
@@ -4042,7 +4051,7 @@ addCardStyleLayout(wrapperComponent, headers, data, tableId) {
                 if (!tableId) return;
 
                 updates.forEach(({ rowIndex, columnKey, newValue }) => {
-                    const cellId = `${tableId}-cell-${rowIndex}-${columnKey}`;
+                    const cellId = `${tableId}-cell-${rowIndex}-${sanitizeColumnKey(columnKey)}`;
 
                     const tableComponent = this.components().at(0);
                     const tableElement = tableComponent.components().find(comp =>
@@ -4122,7 +4131,8 @@ addCardStyleLayout(wrapperComponent, headers, data, tableId) {
                 });
 
                 Object.keys(headers).forEach(key => {
-                    const cellId = `${tableId}-cell-${rowIndex}-${key}`;
+                    const safeKey = sanitizeColumnKey(key);
+                    const cellId = `${tableId}-cell-${rowIndex}-${safeKey}`;
                     const cellStyles = this.getCellStyle(rowIndex, key);
 
                     const cellComponent = rowComponent.components().add({

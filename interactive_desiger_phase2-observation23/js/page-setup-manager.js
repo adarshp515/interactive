@@ -10791,7 +10791,19 @@ padding: 8px;
       }
     } catch (err) {}
 
-    if (!this.pageSettings.pageNumber?.enabled) {
+    const pageNumberEnabled = !!this.pageSettings.pageNumber?.enabled;
+    if (pageComponent.addAttributes) {
+      pageComponent.addAttributes({
+        "data-page-number-enabled": pageNumberEnabled ? "true" : "false",
+      });
+    } else if (pageComponent.setAttribute) {
+      pageComponent.setAttribute(
+        "data-page-number-enabled",
+        pageNumberEnabled ? "true" : "false",
+      );
+    }
+
+    if (!pageNumberEnabled) {
       return;
     }
 

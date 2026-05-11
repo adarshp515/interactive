@@ -310,12 +310,6 @@ async function renderTemplateForJson(browser, templateHtml, jsonObject, baseUrl,
       printBackground: true,
       preferCSSPageSize: true,
       format: "A4",
-      margin: {
-        top: "0",
-        right: "0",
-        bottom: "0",
-        left: "0",
-      },
     });
 
     return { html: renderedHtml, pdf };

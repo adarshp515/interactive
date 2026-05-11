@@ -4418,12 +4418,13 @@ function createNewPage(templatePage, headerWrapper, footerWrapper) {
         <title>Print Preview</title>
         ${combinedStyles}
         <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
+            html, body { margin: 0; padding: 0; }
             body { font-family: Arial, sans-serif; background: white; }
+            body * { box-sizing: border-box; }
             .page-container { background: white; }
             @media print {
                 body { background: white; }
-              .page-container { margin: 0; box-shadow: none; page-break-after: auto !important; break-after: auto !important; }
+              .page-container { box-shadow: none; page-break-after: auto !important; break-after: auto !important; }
               .page-container:last-child { page-break-after: auto !important; break-after: auto !important; }
             }
         </style>
