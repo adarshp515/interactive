@@ -2038,6 +2038,46 @@ class PageSetupManager {
             modifiedState = encodeURIComponent(JSON.stringify(stateData));
           }
         } catch (err) {}
+      } else {
+        try {
+          const headers =
+            component.get?.("custom-headers") ||
+            component.get?.("table-headers") ||
+            null;
+          const data =
+            component.get?.("custom-data") ||
+            component.get?.("table-data") ||
+            null;
+
+          if (
+            headers &&
+            typeof headers === "object" &&
+            !Array.isArray(headers) &&
+            Array.isArray(data)
+          ) {
+            const slicedData = data.slice(rowsToKeep);
+            const stateData = {
+              headers,
+              data: slicedData,
+              dataRows: slicedData.length,
+              styles: component.get?.("table-styles-applied") || null,
+              highlights: component.get?.("highlight-conditions") || null,
+              filter: {
+                column: component.get?.("filter-column") || null,
+                value: component.get?.("filter-value") || null,
+              },
+              meta: {
+                tableType: component.get?.("table-type") || "standard",
+                caption: component.get?.("caption") || "no",
+                pageLength: component.get?.("page-length") || 10,
+                pagination: component.get?.("pagination") || "no",
+                search: component.get?.("search") || "no",
+                fileDownload: component.get?.("file-download") || "",
+              },
+            };
+            modifiedState = encodeURIComponent(JSON.stringify(stateData));
+          }
+        } catch (err) {}
       }
 
       const preserveAllSettings = () => {

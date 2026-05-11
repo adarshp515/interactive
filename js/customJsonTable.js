@@ -78,76 +78,91 @@ function jsontablecustom(editor) {
     function applyHighlighting(tableId, conditions, highlightColor, highlightTextColor, highlightFontFamily, highlightFontSize) {
         try {
             const canvasBody = editor.Canvas.getBody();
-            const table = canvasBody.querySelector(`#${tableId}`);
-            if (!table) return;
-            const wrapper = editor.DomComponents.getWrapper();
-            const prev = table.querySelectorAll('tr[data-highlighted-row="true"], td[data-highlighted="true"], th[data-highlighted="true"]');
-            prev.forEach(td => {
-                td.style.backgroundColor = '';
-                td.style.color = '';
-                td.style.fontFamily = '';
-                td.style.fontSize = '';
-                td.removeAttribute('data-highlighted');
-                td.removeAttribute('data-highlighted-row');
+            if (!canvasBody) return;
+            const baseTable = canvasBody.querySelector(`#${tableId}`);
+            if (!baseTable) return;
 
-                const id = td.id;
-                if (id) {
-                    const comp = wrapper.find(`#${id}`)[0];
-                    if (comp) {
-                        comp.removeStyle('background-color');
-                        comp.removeStyle('color');
-                        comp.removeStyle('font-family');
-                        comp.removeStyle('font-size');
+            const sharedId =
+                baseTable.getAttribute('data-source-table-id') ||
+                (baseTable.closest('[data-source-table-id]') || {}).getAttribute?.('data-source-table-id') ||
+                baseTable.getAttribute('data-original-table-id') ||
+                '';
+
+            const tables = sharedId
+                ? Array.from(canvasBody.querySelectorAll(`table.json-data-table[data-source-table-id="${sharedId}"]`))
+                : [baseTable];
+
+            const wrapper = editor.DomComponents.getWrapper();
+
+            tables.forEach((table) => {
+                const prev = table.querySelectorAll('tr[data-highlighted-row="true"], td[data-highlighted="true"], th[data-highlighted="true"]');
+                prev.forEach(td => {
+                    td.style.backgroundColor = '';
+                    td.style.color = '';
+                    td.style.fontFamily = '';
+                    td.style.fontSize = '';
+                    td.removeAttribute('data-highlighted');
+                    td.removeAttribute('data-highlighted-row');
+
+                    const id = td.id;
+                    if (id) {
+                        const comp = wrapper.find(`#${id}`)[0];
+                        if (comp) {
+                            comp.removeStyle('background-color');
+                            comp.removeStyle('color');
+                            comp.removeStyle('font-family');
+                            comp.removeStyle('font-size');
+                        }
                     }
+                });
+
+                if (conditions && conditions.length > 0) {
+                    const rows = table.querySelectorAll('tbody tr');
+                    rows.forEach(row => {
+                        const cells = row.querySelectorAll('td');
+                        let rowShouldHighlight = false;
+
+                        cells.forEach(td => {
+                            const div = td.querySelector('div');
+                            const val = div ? div.textContent.trim() : td.textContent.trim();
+
+                            if (!rowShouldHighlight) {
+                                rowShouldHighlight = conditions.some(condition =>
+                                    evaluateCondition(val, condition)
+                                );
+                            }
+                        });
+
+                        if (!rowShouldHighlight) return;
+
+                        row.setAttribute('data-highlighted-row', 'true');
+                        row.style.backgroundColor = highlightColor || '';
+
+                        cells.forEach(td => {
+                            td.setAttribute('data-highlighted', 'true');
+                            td.style.backgroundColor = highlightColor || '';
+                            td.style.color = highlightTextColor || '';
+                            td.style.fontFamily = highlightFontFamily || '';
+                            td.style.fontSize = highlightFontSize ? `${highlightFontSize}px` : '';
+                            td.style.boxSizing = 'border-box';
+
+                            const id = td.id;
+                            if (id) {
+                                const comp = wrapper.find(`#${id}`)[0];
+                                if (comp) {
+                                    comp.addStyle({
+                                        'background-color': highlightColor || '',
+                                        'color': highlightTextColor || '',
+                                        'font-family': highlightFontFamily || '',
+                                        'font-size': highlightFontSize ? `${highlightFontSize}px` : '',
+                                        'box-sizing': 'border-box',
+                                    });
+                                }
+                            }
+                        });
+                    });
                 }
             });
-
-            if (conditions && conditions.length > 0) {
-                const rows = table.querySelectorAll('tbody tr');
-                rows.forEach(row => {
-                    const cells = row.querySelectorAll('td');
-                    let rowShouldHighlight = false;
-
-                    cells.forEach(td => {
-                        const div = td.querySelector('div');
-                        const val = div ? div.textContent.trim() : td.textContent.trim();
-
-                        if (!rowShouldHighlight) {
-                            rowShouldHighlight = conditions.some(condition =>
-                                evaluateCondition(val, condition)
-                            );
-                        }
-                    });
-
-                    if (!rowShouldHighlight) return;
-
-                    row.setAttribute('data-highlighted-row', 'true');
-                    row.style.backgroundColor = highlightColor || '';
-
-                    cells.forEach(td => {
-                        td.setAttribute('data-highlighted', 'true');
-                        td.style.backgroundColor = highlightColor || '';
-                        td.style.color = highlightTextColor || '';
-                        td.style.fontFamily = highlightFontFamily || '';
-                        td.style.fontSize = highlightFontSize ? `${highlightFontSize}px` : '';
-                        td.style.boxSizing = 'border-box';
-
-                        const id = td.id;
-                        if (id) {
-                            const comp = wrapper.find(`#${id}`)[0];
-                            if (comp) {
-                                comp.addStyle({
-                                    'background-color': highlightColor || '',
-                                    'color': highlightTextColor || '',
-                                    'font-family': highlightFontFamily || '',
-                                    'font-size': highlightFontSize ? `${highlightFontSize}px` : '',
-                                    'box-sizing': 'border-box',
-                                });
-                            }
-                        }
-                    });
-                });
-            }
 
         } catch (err) {
             console.warn('Error applying highlighting:', err);
@@ -817,7 +832,7 @@ function jsontablecustom(editor) {
                     }, 100);
                 });
 
-                this.on('change:highlight-conditions change:highlight-color', () => {
+                this.on('change:highlight-conditions change:highlight-color change:highlight-text-color change:highlight-font-family change:highlight-font-size', () => {
                     if (this._isRestoring) return;
                     this.handleHighlightChange();
                 });
@@ -1482,33 +1497,39 @@ function jsontablecustom(editor) {
             },
 
             setHighlightConditions(conditions) {
-                this.set('highlight-conditions', conditions);
-                this.updateTableHTML();
+                this.set('highlight-conditions', Array.isArray(conditions) ? [...conditions] : []);
             },
 
             addHighlightCondition(condition) {
-                const conditions = this.getHighlightConditions();
+                const conditions = [...this.getHighlightConditions()];
                 conditions.push(condition);
                 this.setHighlightConditions(conditions);
             },
 
             removeHighlightCondition(index) {
-                const conditions = this.getHighlightConditions();
+                const conditions = [...this.getHighlightConditions()];
                 conditions.splice(index, 1);
                 this.setHighlightConditions(conditions);
             },
 
             handleHighlightChange() {
                 const tableElement = this.view.el.querySelector('.json-data-table');
-                if (!tableElement || !tableElement.id) return;
-                const tableId = tableElement.id;
                 const conditions = this.getHighlightConditions();
                 const color = this.get('highlight-color');
                 const textColor = this.get('highlight-text-color');
                 const fontFamily = this.get('highlight-font-family');
                 const fontSize = parseFloat(this.get('highlight-font-size')) || 0;
-                applyHighlighting(tableId, conditions, color, textColor, fontFamily, fontSize);
-                editor.trigger('component:update', this);
+                const sharedTableId =
+                    this.getAttributes?.()['data-source-table-id'] ||
+                    tableElement?.getAttribute?.('data-source-table-id') ||
+                    '';
+                const canvasDoc = editor.Canvas.getDocument();
+                const firstTable =
+                    (sharedTableId && canvasDoc.querySelector(`.json-data-table[data-source-table-id="${sharedTableId}"]`)) ||
+                    tableElement;
+                if (firstTable && firstTable.id) {
+                    applyHighlighting(firstTable.id, conditions, color, textColor, fontFamily, fontSize);
+                }
                 this.updateDataJsonState();
             },
 

@@ -1758,29 +1758,6 @@
     );
 
     try {
-      if (sharedTableId) {
-        const editor = this.editor;
-        const allJsonTables = editor.getWrapper().find('[data-gjs-type="json-table"]');
-
-        allJsonTables.forEach((ct) => {
-          const attrs = ct.getAttributes ? ct.getAttributes() : {};
-          const isContinuation =
-            attrs["data-split-table"] === "continuation" ||
-            attrs["data-continuation-table"] === "true";
-          const continuationSharedId = this.getJsonTableSourceId(ct);
-
-          if (
-            ct !== component &&
-            isContinuation &&
-            continuationSharedId === sharedTableId
-          ) {
-            ct.remove();
-          }
-        });
-      }
-    } catch (e) {}
-
-    try {
       function preserveColumnWidths(sourceTable, targetTable) {
         try {
           const sourceHeaders = sourceTable.querySelectorAll("thead th");
@@ -10688,11 +10665,6 @@ padding: 8px;
 
     const existingIndicator = pageElement.querySelector(".page-indicator");
     if (existingIndicator) existingIndicator.remove();
-
-    const indicator = document.createElement("div");
-    indicator.className = "page-indicator";
-    indicator.textContent = pageSettings.name || `Page ${pageIndex + 1}`;
-    pageElement.appendChild(indicator);
     const mmToPx = 96 / 25.4;
     const marginTopPx = Math.round(this.pageSettings.margins.top * mmToPx);
     const marginBottomPx = Math.round(

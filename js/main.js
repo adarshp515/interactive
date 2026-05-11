@@ -549,6 +549,9 @@ function getHtmlWithCurrentFormState(editor) {
   liveDoc.body
     .querySelectorAll("[id][my-input-json], [id][data-template-text], [id][data-json-file-index]")
     .forEach((liveNode) => {
+      if (isJsonTableDomNode(liveNode)) return;
+      if (isChartDomNode(liveNode)) return;
+
       const exportNode = exportNodesById.get(liveNode.id);
       if (!exportNode) return;
 
@@ -575,6 +578,9 @@ function getHtmlWithCurrentFormState(editor) {
   liveDoc.body
     .querySelectorAll("[my-input-json], [data-template-text], [data-json-file-index]")
     .forEach((liveNode) => {
+      if (isJsonTableDomNode(liveNode)) return;
+      if (isChartDomNode(liveNode)) return;
+
       // Skip if already handled above (has ID)
       if (liveNode.id) return;
 
@@ -3471,6 +3477,27 @@ const apiUrl = `${API_BASE_URL}/uploadHtmlToPdf?file`;
     const breakNodes = tempContainer.querySelectorAll(pageBreakSelectors.join(", "));
     const removedBreakNodeCount = breakNodes.length;
     breakNodes.forEach((node) => node.remove());
+    tempContainer.querySelectorAll(".page-indicator").forEach((node) => node.remove());
+
+    [
+      "gjs-selected",
+      "gjs-hovered",
+      "gjs-selected-parent",
+      "gjs-dashed",
+      "i_designer-selected",
+      "i_designer-hovered",
+      "i_designer-dashed",
+    ].forEach((className) => {
+      tempContainer.querySelectorAll(`.${className}`).forEach((node) => {
+        node.classList.remove(className);
+      });
+    });
+
+    tempContainer
+      .querySelectorAll(
+        '.i_designer-highlighter, .i_designer-highlighter-sel, .i_designer-highlighter-warning, .i_designer-ghost, #i_designer-tools, .i_designer-tools'
+      )
+      .forEach((node) => node.remove());
 
     // Neutralize inline page-break declarations coming from page setup styles.
     let normalizedInlineBreakStyles = 0;
@@ -3692,6 +3719,23 @@ const apiUrl = `${API_BASE_URL}/uploadHtmlToPdf?file`;
       page-break-after: auto !important;
       break-after: auto !important;
     }
+    .page-indicator,
+    .gjs-selected,
+    .gjs-hovered,
+    .gjs-selected-parent,
+    .gjs-dashed,
+    .i_designer-selected,
+    .i_designer-hovered,
+    .i_designer-dashed,
+    .i_designer-highlighter,
+    .i_designer-highlighter-sel,
+    .i_designer-highlighter-warning,
+    .i_designer-ghost,
+    #i_designer-tools,
+    .i_designer-tools {
+      outline: none !important;
+      box-shadow: none !important;
+    }
   }
 </style>`;
 
@@ -3818,9 +3862,131 @@ const apiUrl = `${API_BASE_URL}/uploadHtmlToPdf?file`;
       }, 250);
     });
   });
+  function isPageNumberEnabled() {
+    const managerEnabled =
+      window.pageSetupManager &&
+      window.pageSetupManager.pageSettings &&
+      window.pageSetupManager.pageSettings.pageNumber &&
+      typeof window.pageSetupManager.pageSettings.pageNumber.enabled === "boolean"
+        ? window.pageSetupManager.pageSettings.pageNumber.enabled
+        : null;
+
+    if (managerEnabled !== null) return managerEnabled;
+
+    const templateEnabled =
+      window.pageSetupSettings &&
+      window.pageSetupSettings.pageSettings &&
+      window.pageSetupSettings.pageSettings.pageNumber &&
+      typeof window.pageSetupSettings.pageSettings.pageNumber.enabled === "boolean"
+        ? window.pageSetupSettings.pageSettings.pageNumber.enabled
+        : null;
+
+    return templateEnabled !== null ? templateEnabled : false;
+  }
+
+  function getPageNumberPositionStylesFallback(position, rotation) {
+    let styles = "";
+
+    if (position.includes("top")) {
+      styles += "top: 10px; ";
+    } else if (position.includes("bottom")) {
+      styles += "bottom: 10px; ";
+    } else {
+      styles += "top: 50%; ";
+    }
+
+    if (position.includes("left")) {
+      styles += "left: 10px; ";
+    } else if (position.includes("right")) {
+      styles += "right: 10px; ";
+    } else {
+      styles += "left: 50%; ";
+    }
+
+    let transformValue = "";
+    if (position.includes("center")) {
+      const needsHorizontalCenter =
+        !position.includes("left") && !position.includes("right");
+      const needsVerticalCenter =
+        !position.includes("top") && !position.includes("bottom");
+
+      if (needsHorizontalCenter && needsVerticalCenter) {
+        transformValue = "translate(-50%, -50%) rotate(" + rotation + "deg)";
+      } else if (needsHorizontalCenter) {
+        transformValue = "translateX(-50%) rotate(" + rotation + "deg)";
+      } else if (needsVerticalCenter) {
+        transformValue = "translateY(-50%) rotate(" + rotation + "deg)";
+      } else {
+        transformValue = "rotate(" + rotation + "deg)";
+      }
+    } else {
+      transformValue = "rotate(" + rotation + "deg)";
+    }
+
+    styles += "transform: " + transformValue + "; transform-origin: center center;";
+    return styles;
+  }
+
+  function buildPageNumberTemplateFromSettings() {
+    const settings =
+      (window.pageSetupManager &&
+        window.pageSetupManager.pageSettings &&
+        window.pageSetupManager.pageSettings.pageNumber) ||
+      (window.pageSetupSettings &&
+        window.pageSetupSettings.pageSettings &&
+        window.pageSetupSettings.pageSettings.pageNumber);
+
+    if (!settings) return null;
+
+    const format = settings.format || "Page {n}";
+    const position = settings.position || "bottom-center";
+    const rotation = settings.rotation || 0;
+    const positionStyles =
+      window.pageSetupManager &&
+      typeof window.pageSetupManager.getPageNumberPositionStylesWithRotation ===
+        "function"
+        ? window.pageSetupManager.getPageNumberPositionStylesWithRotation(
+            position,
+            rotation
+          )
+        : getPageNumberPositionStylesFallback(position, rotation);
+
+    const element = document.createElement("div");
+    element.className = "page-number";
+    element.style.cssText =
+      "position: absolute; " +
+      "font-family: " + (settings.fontFamily || "Arial") + "; " +
+      "font-size: " + (settings.fontSize || 8) + "px; " +
+      "color: " + (settings.color || "#333333") + "; " +
+      "background-color: " + (settings.backgroundColor || "transparent") + "; " +
+      "border: " +
+        (settings.showBorder
+          ? "1px solid " + (settings.color || "#333333")
+          : "none") +
+        "; " +
+      "padding: " + (settings.showBorder ? "2px 6px" : "2px") + "; " +
+      "border-radius: 3px; " +
+      "z-index: 1000; " +
+      "pointer-events: none; " +
+      "white-space: nowrap; " +
+      positionStyles;
+
+    return {
+      format,
+      position: {
+        style: element.style.cssText,
+        classList: Array.from(element.classList),
+        element,
+      },
+    };
+  }
+
   function findDecorationsInDocument() {
     const allWatermarks = document.querySelectorAll('.watermark, [data-watermark]');
-    const allPageNumbers = document.querySelectorAll('.page-number, [data-page-number]');
+    const pageNumberEnabled = isPageNumberEnabled();
+    const allPageNumbers = pageNumberEnabled
+      ? document.querySelectorAll('.page-number, [data-page-number]')
+      : [];
 
     return {
       watermark: allWatermarks.length > 0 ? allWatermarks[0] : null,
@@ -3856,6 +4022,7 @@ if (!firstPageContent) {
 }
 
 const pageSettings = extractPageSettings(firstPage);
+const pageNumberEnabled = isPageNumberEnabled();
   if (!pageSettings.watermark && documentDecorations.watermark) {
   pageSettings.watermark = {
     content: documentDecorations.watermark.textContent || documentDecorations.watermark.getAttribute('data-watermark'),
@@ -3864,7 +4031,7 @@ const pageSettings = extractPageSettings(firstPage);
   };
 }
 
-if (!pageSettings.pageNumberFormat && documentDecorations.pageNumber) {
+if (pageNumberEnabled && !pageSettings.pageNumberFormat && documentDecorations.pageNumber) {
   const text = documentDecorations.pageNumber.textContent.trim();
   const format = documentDecorations.pageNumber.getAttribute('data-format') || text.replace(/\d+/g, '{n}') || 'Page {n}';
   
@@ -3874,6 +4041,17 @@ if (!pageSettings.pageNumberFormat && documentDecorations.pageNumber) {
     classList: Array.from(documentDecorations.pageNumber.classList),
     element: documentDecorations.pageNumber.cloneNode(true)
   };
+}
+
+if (pageNumberEnabled && !pageSettings.pageNumberFormat) {
+  const fallbackTemplate = buildPageNumberTemplateFromSettings();
+  if (fallbackTemplate) {
+    pageSettings.pageNumberFormat = fallbackTemplate.format;
+    pageSettings.pageNumberPosition = fallbackTemplate.position;
+  }
+} else if (!pageNumberEnabled) {
+  pageSettings.pageNumberFormat = null;
+  pageSettings.pageNumberPosition = null;
 }
 
 const pageHeight = parseInt(window.getComputedStyle(firstPageContent).height) || 1027;
@@ -4082,7 +4260,10 @@ function extractPageSettings(pageContainer) {
     } else {
     }
 
-    const pageNumber = pageContainer.querySelector('.page-number, [data-page-number]');
+    const pageNumberEnabled = isPageNumberEnabled();
+    const pageNumber = pageNumberEnabled
+      ? pageContainer.querySelector('.page-number, [data-page-number]')
+      : null;
     if (pageNumber) {
       let format = pageNumber.getAttribute('data-format');
       if (!format) {
@@ -4130,6 +4311,13 @@ function applyPageSettings(pageContainer, settings, pageNumber) {
       }
     }
 
+    if (!settings.pageNumberFormat || !settings.pageNumberPosition) {
+      const existingNumbers = pageContainer.querySelectorAll(
+        '.page-number, [data-page-number], .page-number-element'
+      );
+      existingNumbers.forEach((el) => el.remove());
+    }
+
     if (settings.pageNumberFormat && pageNumber !== null && settings.pageNumberPosition && settings.pageNumberPosition.element) {
       const numberText = settings.pageNumberFormat.replace('{n}', pageNumber);
       let pageNumEl = pageContainer.querySelector('.page-number, [data-page-number]');
@@ -4142,10 +4330,10 @@ function applyPageSettings(pageContainer, settings, pageNumber) {
       pageNumEl.textContent = numberText;
       pageNumEl.setAttribute('data-page-number', pageNumber);
     } else if (settings.pageNumberFormat && pageNumber === null) {
-      const pageNumEl = pageContainer.querySelector('.page-number, [data-page-number]');
-      if (pageNumEl) {
-        pageNumEl.remove();
-      }
+      const pageNumEl = pageContainer.querySelectorAll(
+        '.page-number, [data-page-number], .page-number-element'
+      );
+      pageNumEl.forEach((el) => el.remove());
     }
   }
 
@@ -5498,6 +5686,86 @@ function isTemplateAwareTextComponent(component) {
   return ["text", "formatted-rich-text", "custom-heading"].includes(componentType);
 }
 
+function isJsonTableDomNode(node) {
+  if (!node || typeof node.matches !== "function") return false;
+
+  return Boolean(
+    node.matches(
+      'table, thead, tbody, tfoot, tr, td, th, .json-table-container, .json-table-wrapper, .json-data-table, .dataTables_wrapper, [data-gjs-type="json-table"], [data-gjs-type="json-table-cell"]'
+    ) ||
+    node.closest?.(
+      '.json-table-container, .json-table-wrapper, .json-data-table, .dataTables_wrapper, [data-gjs-type="json-table"]'
+    )
+  );
+}
+
+function isJsonTableRelatedComponent(component) {
+  if (!component) return false;
+
+  const componentType = component?.get?.("type");
+  const attrs = component.getAttributes ? component.getAttributes() : {};
+  if (
+    componentType === "json-table" ||
+    componentType === "json-table-cell" ||
+    attrs["data-gjs-type"] === "json-table" ||
+    attrs["data-gjs-type"] === "json-table-cell"
+  ) {
+    return true;
+  }
+
+  const el = component.view?.el || component.getEl?.();
+  return isJsonTableDomNode(el);
+}
+
+function isChartDomNode(node) {
+  if (!node || typeof node.matches !== "function") return false;
+
+  return Boolean(
+    node.matches(
+      '[data-i_designer-type="custom_line_chart"], [data-gjs-type="custom_line_chart"], .highchart-live-areaspline, .highcharts-container, .highcharts-root, [csvurl]'
+    ) ||
+    node.closest?.(
+      '[data-i_designer-type="custom_line_chart"], [data-gjs-type="custom_line_chart"], .highchart-live-areaspline, .highcharts-container, [csvurl]'
+    )
+  );
+}
+
+function isChartRelatedComponent(component) {
+  if (!component) return false;
+
+  const componentType = component?.get?.("type");
+  const attrs = component.getAttributes ? component.getAttributes() : {};
+  if (
+    componentType === "custom_line_chart" ||
+    attrs["data-gjs-type"] === "custom_line_chart" ||
+    attrs["data-i_designer-type"] === "custom_line_chart" ||
+    attrs.csvurl
+  ) {
+    return true;
+  }
+
+  const el = component.view?.el || component.getEl?.();
+  return isChartDomNode(el);
+}
+
+function isGenericTextDatasourceComponent(component) {
+  if (!component || isJsonTableRelatedComponent(component) || isChartRelatedComponent(component)) return false;
+
+  const componentType = component?.get?.("type");
+  const tagName = String(
+    component?.get?.("tagName") ||
+    component.view?.el?.tagName ||
+    component.getEl?.()?.tagName ||
+    ""
+  ).toLowerCase();
+
+  if (["text", "formatted-rich-text", "custom-heading"].includes(componentType)) {
+    return true;
+  }
+
+  return ["p", "span", "label", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote"].includes(tagName);
+}
+
 function getDatasourcePathTokens(path) {
   if (path == null) return [];
 
@@ -5840,12 +6108,19 @@ function hasRenderableJsonTableState(component) {
   );
 }
 
-function updateComponentsWithNewJson(editor) {
+function updateComponentsWithNewJson(editor, reason = "") {
   if (!editor || typeof editor.getWrapper !== "function") return 0;
 
   const cssBindings = collectDatasourceBindingsFromStyles(editor);
   const wrapper = editor.getWrapper();
   let refreshedComponents = 0;
+  const normalizedReason = String(reason || "").toLowerCase();
+  const shouldRefreshJsonTables =
+    normalizedReason.includes("common-json") ||
+    normalizedReason.includes("import") ||
+    normalizedReason.includes("editor-load") ||
+    normalizedReason.includes("manual");
+  const shouldRefreshCharts = shouldRefreshJsonTables;
 
   walkComponentTree(wrapper, (component) => {
     const attrs = component && component.getAttributes ? component.getAttributes() : {};
@@ -5856,6 +6131,8 @@ function updateComponentsWithNewJson(editor) {
       attrs["data-i_designer-type"] === "custom_line_chart";
 
     if (isChartComponent) {
+      if (!shouldRefreshCharts) return;
+
       if (typeof component.restorePersistedChartState === "function") {
         component.restorePersistedChartState();
       }
@@ -5889,13 +6166,17 @@ function updateComponentsWithNewJson(editor) {
         component.updateRunningTotalColumnOptions();
       }
 
+      if (!shouldRefreshJsonTables) {
+        if (typeof component.updateDataJsonState === "function") {
+          component.updateDataJsonState();
+        }
+        return;
+      }
+
       if (shouldPreferExistingRenderedState) {
         component.set?.("show-placeholder", false, { silent: true });
         if (typeof component.updateDataJsonState === "function") {
           component.updateDataJsonState();
-        }
-        if (typeof component.updateTableHTML === "function") {
-          component.updateTableHTML();
         }
       } else {
         if (typeof component.updateTableFromJson === "function") {
@@ -5912,6 +6193,9 @@ function updateComponentsWithNewJson(editor) {
 
     const { jsonPath, jsonFileIndex } = getComponentDatasourceState(component, cssBindings);
     if (!jsonPath) return;
+    if (!isGenericTextDatasourceComponent(component) && typeof component.updateFromJsonPath !== "function" && typeof component.handleJsonPathChange !== "function") {
+      return;
+    }
 
     if (component.set) {
       component.set("my-input-json", jsonPath, { silent: true });
@@ -5951,7 +6235,7 @@ function scheduleDatasourceRebind(reason, delay = 150) {
   clearTimeout(datasourceRebindTimer);
   datasourceRebindTimer = setTimeout(() => {
     try {
-      const refreshedCount = updateComponentsWithNewJson(editor);
+      const refreshedCount = updateComponentsWithNewJson(editor, reason);
       if (refreshedCount > 0) {
         console.debug(`[DataSource Rebind] ${reason}: ${refreshedCount} component(s) refreshed`);
       }

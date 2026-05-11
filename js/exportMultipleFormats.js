@@ -337,7 +337,7 @@ function exportPlugin(editor) {
   function cleanupRichExportContainer(container) {
     if (!container) return container;
 
-    container.querySelectorAll('.page-break, [class*="page-break"]').forEach((el) => el.remove());
+    container.querySelectorAll('.page-break, [class*="page-break"], .page-indicator').forEach((el) => el.remove());
     container.querySelectorAll('script').forEach((el) => el.remove());
 
     container.querySelectorAll('[data-gjs-type], [data-gjs-draggable], [data-gjs-editable], [data-gjs-hoverable], [data-gjs-droppable], [contenteditable], [spellcheck]').forEach((el) => {
@@ -1423,6 +1423,37 @@ function exportPlugin(editor) {
     const apiUrl = `${API_BASE_URL}/uploadSinglePagePdf`;
     const html = getHtmlWithCurrentFormState(editor);
     const css = editor.getCss();
+    const pageMarginSettings =
+      (window.pageSetupManager &&
+        window.pageSetupManager.pageSettings &&
+        window.pageSetupManager.pageSettings.margins) ||
+      (window.pageSetupSettings &&
+        window.pageSetupSettings.pageSettings &&
+        window.pageSetupSettings.pageSettings.margins) ||
+      null;
+    const resolveMargin = (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    const exportMargins = pageMarginSettings
+      ? {
+          top: resolveMargin(pageMarginSettings.top),
+          right: resolveMargin(pageMarginSettings.right),
+          bottom: resolveMargin(pageMarginSettings.bottom),
+          left: resolveMargin(pageMarginSettings.left),
+        }
+      : null;
+    const exportMarginCss = exportMargins
+      ? `
+      @page {
+        margin: 0 !important;
+      }
+      .single-page-pdf-export-root {
+        padding: ${exportMargins.top}mm ${exportMargins.right}mm ${exportMargins.bottom}mm ${exportMargins.left}mm;
+        padding-bottom: calc(${exportMargins.bottom}mm + 40px);
+      }
+    `
+      : "";
 
     let overlay = document.createElement("div");
     overlay.id = "pdf-loading-overlay";
@@ -1470,6 +1501,37 @@ function exportPlugin(editor) {
       } catch (remErr) {
         console.warn("⚠️ Error removing page-break elements:");
       }
+
+      const selectionClasses = [
+        "gjs-selected",
+        "gjs-hovered",
+        "gjs-selected-parent",
+        "gjs-dashed",
+        "i_designer-selected",
+        "i_designer-hovered",
+        "i_designer-dashed",
+      ];
+      selectionClasses.forEach((cls) => {
+        tempDiv.querySelectorAll(`.${cls}`).forEach((el) => {
+          el.classList.remove(cls);
+        });
+      });
+
+      tempDiv
+        .querySelectorAll('[data-i_designer-highlightable]')
+        .forEach((el) => {
+          el.removeAttribute('data-i_designer-highlightable');
+          el.style.borderColor = 'transparent';
+          el.style.outline = 'none';
+          el.style.boxShadow = 'none';
+          el.style.transition = 'none';
+        });
+
+      tempDiv
+        .querySelectorAll(
+          '.i_designer-highlighter, .i_designer-highlighter-sel, .i_designer-highlighter-warning, .i_designer-ghost, #i_designer-tools, .i_designer-tools, .page-indicator'
+        )
+        .forEach((el) => el.remove());
 
       const canvasResources = {
         styles: [
@@ -1530,8 +1592,26 @@ function exportPlugin(editor) {
             .single-page-pdf-export-root > .page-container:last-child {
               margin-bottom: 40px !important;
             }
+            .gjs-selected,
+            .gjs-hovered,
+            .gjs-selected-parent,
+            .gjs-dashed,
+            .i_designer-selected,
+            .i_designer-hovered,
+            .i_designer-dashed,
+            .i_designer-highlighter,
+            .i_designer-highlighter-sel,
+            .i_designer-highlighter-warning,
+            .i_designer-ghost,
+            #i_designer-tools,
+            .i_designer-tools,
+            *[data-i_designer-highlightable] {
+              outline: none !important;
+              box-shadow: none !important;
+            }
             ${sanitizeRichExportCss(css)}
             ${getRichExportStyleOverrides({ imageMaxWidthPt: 375 })}
+            ${exportMarginCss}
           </style>
         </head>
         <body><div class="single-page-pdf-export-root">${tempDiv.innerHTML}</div></body>
