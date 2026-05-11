@@ -831,20 +831,65 @@ function addFormattedRichTextComponent(editor) {
     const tokens = tokenizeDatasourcePath(path);
     if (!tokens.length) return undefined;
 
-    return tokens.reduce((currentValue, token) => {
+    const readTokens = (root, pathTokens) => pathTokens.reduce((currentValue, token) => {
       if (currentValue === null || currentValue === undefined) {
         return undefined;
       }
 
       return currentValue[token];
-    }, source);
+    }, root);
+
+    const directValue = readTokens(source, tokens);
+    if (directValue !== undefined && directValue !== null) return directValue;
+
+    const preferredLanguage =
+      localStorage.getItem('custom_language') ||
+      localStorage.getItem('language') ||
+      'english';
+
+    if (
+      source &&
+      preferredLanguage &&
+      source[preferredLanguage] &&
+      typeof source[preferredLanguage] === 'object'
+    ) {
+      const preferredValue = readTokens(source[preferredLanguage], tokens);
+      if (preferredValue !== undefined && preferredValue !== null) return preferredValue;
+    }
+
+    return directValue;
+  }
+
+  function formatDatasourceValueForText(value) {
+    if (value === undefined || value === null) return '';
+
+    if (Array.isArray(value)) {
+      return value
+        .map(item => formatDatasourceValueForText(item))
+        .filter(item => item !== '')
+        .join(', ');
+    }
+
+    if (typeof value === 'object') {
+      if (value.name !== undefined && value.name !== null) return String(value.name);
+      if (value.label !== undefined && value.label !== null) return String(value.label);
+      if (value.value !== undefined && value.value !== null) return String(value.value);
+
+      try {
+        return JSON.stringify(value);
+      } catch (err) {
+        return '';
+      }
+    }
+
+    return String(value);
   }
 
   function getPlaceholderCandidatesFromPath(path) {
     const tokens = tokenizeDatasourcePath(path);
-    if (tokens.length <= 1) return [];
+    if (!tokens.length) return [];
 
-    const nestedTokens = tokens.slice(1);
+    const nestedTokens = tokens.length > 1 ? tokens.slice(1) : tokens;
     const lastNamedToken = [...nestedTokens]
       .reverse()
       .find(token => typeof token === 'string' && token.trim());
@@ -1049,21 +1094,22 @@ function addFormattedRichTextComponent(editor) {
             typeof getComponentTemplateText === 'function'
               ? getComponentTemplateText(this)
               : (this.get('templateText') || '');
-          const contentSource =
-            typeof getComponentTemplateSource === 'function'
-              ? getComponentTemplateSource(this)
-              : (
-                storedTemplateText ||
-                this.get('raw-content') ||
-                this.get('content') ||
-                this.view?.el?.innerHTML ||
-                ''
-              );
-          const sourceText = String(contentSource || '');
-          const sourceHasTemplate =
+          const hasTemplateText = (value) =>
             typeof hasDatasourceTemplatePlaceholders === 'function'
-              ? hasDatasourceTemplatePlaceholders(sourceText)
-              : (sourceText.includes('{') && sourceText.includes('}'));
+              ? hasDatasourceTemplatePlaceholders(value)
+              : /{[^{}]+}/.test(String(value || ''));
+          const sourceCandidates = [
+            storedTemplateText,
+            this.view?.el?.innerHTML || '',
+            this.get('raw-content') || '',
+            this.get('content') || ''
+          ];
+          const contentSource =
+            sourceCandidates.find(candidate => hasTemplateText(candidate)) ||
+            sourceCandidates.find(candidate => String(candidate || '').trim()) ||
+            '';
+          const sourceText = String(contentSource || '');
+          const sourceHasTemplate = hasTemplateText(sourceText);
 
           // 🔁 TEMPLATE MODE
           if (sourceHasTemplate) {
@@ -1092,7 +1138,7 @@ function addFormattedRichTextComponent(editor) {
 
                     updatedContent = updatedContent.replace(
                       new RegExp(escaped, 'g'),
-                      String(value)
+                      formatDatasourceValueForText(value)
                     );
                   });
                 }
@@ -1120,7 +1166,7 @@ function addFormattedRichTextComponent(editor) {
                 const value = resolveDatasourcePathValue(commonJson, firstPath);
 
                 if (value !== undefined && value !== null) {
-                  this.set('raw-content', String(value), { silent: true });
+                  this.set('raw-content', formatDatasourceValueForText(value), { silent: true });
                   this.updateContent?.();
                 }
               } catch (e) {

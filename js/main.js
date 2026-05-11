@@ -1613,7 +1613,7 @@ editor.Commands.add("open-modal", {
           const resolvedValue = resolution.valuesByPath.get(bindingPath);
           if (resolvedValue === undefined || resolvedValue === null) return false;
 
-          const resolvedText = String(resolvedValue).trim();
+          const resolvedText = formatDatasourceValueForText(resolvedValue).trim();
           if (!resolvedText) return false;
 
           return nodeText !== resolvedText && nodeText.includes(resolvedText);
@@ -1639,7 +1639,7 @@ editor.Commands.add("open-modal", {
           if (resolution && resolution.fileIndex !== jsonFileIndex) {
             targetNode.setAttribute("data-json-file-index", String(resolution.fileIndex));
           }
-          const resolvedText = resolvedValue == null ? "" : String(resolvedValue).trim();
+          const resolvedText = formatDatasourceValueForText(resolvedValue).trim();
 
           if (!hasDatasourceTemplatePlaceholders(templateText)) {
             const nodeText = String(targetNode.textContent || targetNode.innerText || "").trim();
@@ -1935,6 +1935,70 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
     });
   };
 
+  const isJsonTableStructureElement = (node) => {
+    if (!node || typeof node.matches !== "function") return false;
+
+    return node.matches(
+      'table, .json-table-container, .json-table-wrapper, .json-data-table, [data-gjs-type="json-table"]'
+    );
+  };
+
+  const getBulkTableRowOffsetForElement = (node) => {
+    if (!node || typeof node.closest !== "function") return 0;
+
+    const tableRoot = node.closest(
+      '[data-continuation-table="true"], [data-split-table="continuation"]'
+    );
+    if (!tableRoot) return 0;
+
+    const rowsKept = parseInt(String(tableRoot.getAttribute("data-rows-kept") || "0"), 10);
+    return Number.isNaN(rowsKept) || rowsKept < 0 ? 0 : rowsKept;
+  };
+
+  const applyBulkTableRowOffsetToPath = (pathExpression, rowOffset) => {
+    if (!rowOffset) return String(pathExpression || "");
+
+    return String(pathExpression || "").replace(
+      /(\.data\s*\[\s*)(\d+)(\s*\])/g,
+      (match, prefix, rowIndex, suffix) =>
+        `${prefix}${parseInt(rowIndex, 10) + rowOffset}${suffix}`,
+    );
+  };
+
+  const normalizeBulkPayloadMappingsForTables = (root, payloadMappings) => {
+    if (!root || !Array.isArray(payloadMappings)) return payloadMappings;
+
+    return payloadMappings
+      .map((mapping) => {
+        if (!mapping || typeof mapping !== "object" || Array.isArray(mapping)) return mapping;
+
+        const normalizedEntries = [];
+        Object.entries(mapping).forEach(([id, value]) => {
+          if (!id || id === "file_name" || id === "password") {
+            normalizedEntries.push([id, value]);
+            return;
+          }
+
+          const targetNode = root.querySelector(`[id="${String(id).replace(/"/g, '\\"')}"]`);
+          if (isJsonTableStructureElement(targetNode)) {
+            return;
+          }
+
+          const rowOffset = getBulkTableRowOffsetForElement(targetNode);
+          if (rowOffset && typeof value === "string") {
+            normalizedEntries.push([id, applyBulkTableRowOffsetToPath(value, rowOffset)]);
+            return;
+          }
+
+          normalizedEntries.push([id, value]);
+        });
+
+        if (!normalizedEntries.length) return null;
+        return Object.fromEntries(normalizedEntries);
+      })
+      .filter(Boolean);
+  };
+
   const renderTemplateAwareValue = (binding, jsonObject) => {
     const resolvedValue = resolveValueFromDatasource(jsonObject, binding.sourcePath);
     if (resolvedValue === undefined || resolvedValue === null) return null;
@@ -2036,6 +2100,12 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
 
   const html = getHtmlWithCurrentFormState(editor);
   const css = editor.getCss();
+  const bulkMappingRoot = document.createElement("div");
+  bulkMappingRoot.innerHTML = html;
+  const bulkPayloadMappings = normalizeBulkPayloadMappingsForTables(
+    bulkMappingRoot,
+    inputJsonMappings,
+  );
 
   let finalHtml;
   const canvasResources = {
@@ -2478,6 +2548,31 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
           return String(value || '').replace(/[-\\/\\\\^$*+?.()|[\\]{}]/g, '\\\\$&');
         }
 
+        function formatBulkScalar(value) {
+          if (value === undefined || value === null) return '';
+
+          if (Array.isArray(value)) {
+            return value.map(function(item) {
+              return formatBulkScalar(item);
+            }).filter(function(item) {
+              return item !== '';
+            }).join(', ');
+          }
+
+          if (typeof value === 'object') {
+            try {
+              if (value.name !== undefined && value.name !== null) return String(value.name);
+              if (value.label !== undefined && value.label !== null) return String(value.label);
+              if (value.value !== undefined && value.value !== null) return String(value.value);
+              return JSON.stringify(value);
+            } catch (err) {
+              return '';
+            }
+          }
+
+          return String(value);
+        }
+
         function getPlaceholderTokens(pathExpression) {
           var tokens = tokenizePath(pathExpression);
           if (!tokens.length) return [];
@@ -2512,7 +2607,7 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
 
         function renderTemplateValue(templateText, pathExpression, value) {
           var rendered = String(templateText || '');
-          var valueText = String(value == null ? '' : value);
+          var valueText = formatBulkScalar(value);
           if (String(pathExpression || '').indexOf('__i_designer_template_values.') === 0) {
             return valueText;
           }
@@ -2528,16 +2623,48 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
           return rendered === beforeReplace ? valueText : rendered;
         }
 
+        function isJsonTableStructureNode(node) {
+          if (!node || typeof node.matches !== 'function') return false;
+
+          if (node.matches('table, .json-table-container, .json-table-wrapper, [data-gjs-type="json-table"]')) {
+            return true;
+          }
+
+          return node.classList &&
+            node.classList.contains('json-data-table');
+        }
+
+        function getBulkTableRowOffset(node) {
+          if (!node || typeof node.closest !== 'function') return 0;
+
+          var tableRoot =
+            node.closest('[data-continuation-table="true"], [data-split-table="continuation"]');
+          if (!tableRoot) return 0;
+
+          var rowsKept = parseInt(String(tableRoot.getAttribute('data-rows-kept') || '0'), 10);
+          return isNaN(rowsKept) || rowsKept < 0 ? 0 : rowsKept;
+        }
+
+        function applyBulkTableRowOffset(pathExpression, rowOffset) {
+          if (!rowOffset) return pathExpression;
+
+          return String(pathExpression || '').replace(/(\\.data\\s*\\[\\s*)(\\d+)(\\s*\\])/g, function(match, prefix, rowIndex, suffix) {
+            return prefix + (parseInt(rowIndex, 10) + rowOffset) + suffix;
+          });
+        }
+
         function applyTextBindingValues() {
           document.querySelectorAll('[my-input-json]').forEach(function(node) {
             var jsonObject = getCurrentJsonObject(node);
 
             if (!node || /^(SCRIPT|STYLE|LINK|META)$/i.test(node.tagName || '')) return;
             if (node.closest && node.closest('[data-watermark-json-path]')) return;
+            if (isJsonTableStructureNode(node)) return;
 
             var rawPathExpression = node.getAttribute('my-input-json') || '';
+            var tableRowOffset = getBulkTableRowOffset(node);
             var paths = rawPathExpression.split(',').map(function(path) {
-              return path.trim();
+              return applyBulkTableRowOffset(path.trim(), tableRowOffset);
             }).filter(Boolean);
             if (!paths.length) return;
 
@@ -2575,12 +2702,12 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
             if (finalValue === undefined || finalValue === null) return;
 
             if (/^(INPUT|TEXTAREA|SELECT)$/i.test(node.tagName || '')) {
-              node.value = String(finalValue);
-              node.setAttribute('value', String(finalValue));
+              node.value = formatBulkScalar(finalValue);
+              node.setAttribute('value', formatBulkScalar(finalValue));
             } else if (hasTemplate) {
-              node.innerHTML = String(finalValue);
+              node.innerHTML = formatBulkScalar(finalValue);
             } else {
-              node.textContent = String(finalValue);
+              node.textContent = formatBulkScalar(finalValue);
             }
           });
         }
@@ -2591,10 +2718,10 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
             var pathExpression = node.getAttribute('data-watermark-json-path') || '';
             var selectedLanguage = node.getAttribute('data-watermark-json-language') || '';
             var value = resolveFromAnyLanguage(jsonObject, pathExpression, selectedLanguage);
-            if (value === undefined || value === null || String(value).trim() === '') {
+            if (value === undefined || value === null || formatBulkScalar(value).trim() === '') {
               value = node.getAttribute('data-watermark-static-text') || node.textContent || '';
             }
-            node.textContent = String(value);
+            node.textContent = formatBulkScalar(value);
           });
         }
 
@@ -2617,7 +2744,7 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = html;
     restoreTemplateAwareTextForBulkExport(tempDiv);
-    materializeBulkPayloadMappings(tempDiv, inputJsonMappings);
+    materializeBulkPayloadMappings(tempDiv, bulkPayloadMappings);
     let workingCss = applyTemplateAwarePathOverrides(tempDiv, css);
 
     // Hide editor-only page-break markers in Bulk Export output.
@@ -2656,7 +2783,7 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = html;
     restoreTemplateAwareTextForBulkExport(tempDiv);
-    materializeBulkPayloadMappings(tempDiv, inputJsonMappings);
+    materializeBulkPayloadMappings(tempDiv, bulkPayloadMappings);
     const workingCss = applyTemplateAwarePathOverrides(tempDiv, css);
 
     // Hide editor-only page-break markers in Bulk Export output.
@@ -2740,7 +2867,7 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
     );
   }
 
-  formData.append("payload", JSON.stringify(inputJsonMappings));
+  formData.append("payload", JSON.stringify(bulkPayloadMappings));
 
   let overlay = document.createElement("div");
   overlay.id = "pdf-loading-overlay";
@@ -2786,7 +2913,7 @@ async function exportDesignAndSend(editor, inputJsonMappings, templateAwareBindi
   document.body.appendChild(overlay);
 
   console.log("[bulk-export] exportType:", exportType);
-  console.log("[bulk-export] payload mappings:", inputJsonMappings);
+  console.log("[bulk-export] payload mappings:", bulkPayloadMappings);
   console.log("[bulk-export] uploaded files:", activeUploadedJsonFiles.map((f) => ({ name: f.name, fromLocal: f.fromLocal })));
 
   try {
@@ -5271,6 +5398,31 @@ function decodeDatasourceTemplateText(value) {
   }
 }
 
+function formatDatasourceValueForText(value) {
+  if (value === undefined || value === null) return "";
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => formatDatasourceValueForText(item))
+      .filter((item) => item !== "")
+      .join(", ");
+  }
+
+  if (typeof value === "object") {
+    if (value.name !== undefined && value.name !== null) return String(value.name);
+    if (value.label !== undefined && value.label !== null) return String(value.label);
+    if (value.value !== undefined && value.value !== null) return String(value.value);
+
+    try {
+      return JSON.stringify(value);
+    } catch (err) {
+      return "";
+    }
+  }
+
+  return String(value);
+}
+
 function getComponentTemplateText(component) {
   if (!component) return "";
 
@@ -5326,11 +5478,16 @@ function setComponentTemplateText(component, templateText) {
 }
 
 function getComponentTemplateSource(component) {
+  const candidates = [
+    getComponentTemplateText(component),
+    component?.view?.el?.innerHTML || "",
+    component?.get?.("raw-content") || "",
+    component?.get?.("content") || "",
+  ];
+
   return (
-    getComponentTemplateText(component) ||
-    component?.get?.("raw-content") ||
-    component?.get?.("content") ||
-    component?.view?.el?.innerHTML ||
+    candidates.find((candidate) => hasDatasourceTemplatePlaceholders(candidate)) ||
+    candidates.find((candidate) => String(candidate || "").trim()) ||
     ""
   );
 }
@@ -5514,7 +5671,7 @@ function resolveDataBoundExportContent(liveNode) {
       const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       renderedContent = renderedContent.replace(
         new RegExp(escapedPlaceholder, "g"),
-        String(resolvedValue)
+        formatDatasourceValueForText(resolvedValue)
       );
     });
   });
@@ -5589,7 +5746,10 @@ function resolveTextContentFromDatasource(component, jsonPath, commonJson) {
       placeholderTokens.forEach((placeholderToken) => {
         const placeholder = `{${placeholderToken}}`;
         const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        nextContent = nextContent.replace(new RegExp(escapedPlaceholder, "g"), String(resolvedValue));
+        nextContent = nextContent.replace(
+          new RegExp(escapedPlaceholder, "g"),
+          formatDatasourceValueForText(resolvedValue)
+        );
       });
     });
 
@@ -5598,7 +5758,7 @@ function resolveTextContentFromDatasource(component, jsonPath, commonJson) {
 
   const firstValue = resolveValueFromDatasource(commonJson, jsonPaths[0]);
   if (firstValue === undefined || firstValue === null) return undefined;
-  return String(firstValue);
+  return formatDatasourceValueForText(firstValue);
 }
 
 function applyResolvedTextContent(component, content) {
