@@ -217,6 +217,18 @@ function exportPlugin(editor) {
       if (!clone.getAttribute("xmlns")) {
         clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
       }
+      if (!clone.getAttribute("xmlns:xlink")) {
+        clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+      }
+
+      const size = getVisualNodeSize(svgNode, svgNode);
+      if (!clone.getAttribute("width") && size.width) {
+        clone.setAttribute("width", String(size.width));
+      }
+      if (!clone.getAttribute("height") && size.height) {
+        clone.setAttribute("height", String(size.height));
+      }
+
       const markup = new XMLSerializer().serializeToString(clone);
       return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
     } catch (err) {
@@ -320,13 +332,26 @@ function exportPlugin(editor) {
     node.parentNode && node.parentNode.replaceChild(img, node);
   }
 
-  async function inlineVisualNodes(container, editor) {
+  function isSvgDataUrl(dataUrl) {
+    return /^data:image\/svg(?:\+xml)?[,;]/i.test(String(dataUrl || ""));
+  }
+
+  async function inlineVisualNodes(container, editor, options = {}) {
     const visualNodes = Array.from(container.querySelectorAll("img, canvas, svg"));
     let replacedVisualNodes = 0;
     for (const node of visualNodes) {
       if ((node.tagName || "").toUpperCase() === "SVG" && node.closest("defs")) continue;
       const visual = await getVisualNodeData(node, editor);
       if (!visual.dataUrl) continue;
+
+      if (options.rasterizeSvg && isSvgDataUrl(visual.dataUrl)) {
+        visual.dataUrl = await ensureRasterDataUrl(
+          visual.dataUrl,
+          visual.width,
+          visual.height
+        );
+      }
+
       replaceVisualNodeWithImage(node, visual.dataUrl, visual);
       replacedVisualNodes++;
     }
@@ -544,7 +569,9 @@ function exportPlugin(editor) {
     cleanupRichExportContainer(tempDiv);
 
     if (exportOptions.inlineVisuals) {
-      await inlineVisualNodes(tempDiv, editor);
+      await inlineVisualNodes(tempDiv, editor, {
+        rasterizeSvg: exportOptions.rasterizeSvg,
+      });
       cleanupRichExportContainer(tempDiv);
     }
 
@@ -570,8 +597,70 @@ function exportPlugin(editor) {
     await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
 
+  async function rasterizeSvgImagesForWord(container, editor) {
+    if (!container) return;
+
+    const nodes = Array.from(container.querySelectorAll("img, svg"));
+    let rasterizedSvgCount = 0;
+
+    for (const node of nodes) {
+      const tag = (node.tagName || "").toUpperCase();
+      const src = tag === "IMG"
+        ? String(node.currentSrc || node.getAttribute("src") || "").trim()
+        : "";
+      const looksLikeSvg =
+        tag === "SVG" ||
+        isSvgDataUrl(src) ||
+        /\.svg(?:$|[?#])/i.test(src);
+
+      if (!looksLikeSvg) continue;
+
+      try {
+        const visual = await getVisualNodeData(node, editor);
+        if (!visual.dataUrl) continue;
+
+        let rasterDataUrl = await ensureRasterDataUrl(
+          visual.dataUrl,
+          visual.width,
+          visual.height
+        );
+
+        if (isSvgDataUrl(rasterDataUrl) && window.html2canvas) {
+          try {
+            const liveDoc = getLiveCanvasDoc(editor);
+            const liveNode = getLiveNodeForExportNode(node, liveDoc) || node;
+            const canvas = await html2canvas(liveNode, {
+              backgroundColor: null,
+              scale: 2,
+              logging: false,
+              useCORS: true,
+            });
+            rasterDataUrl = canvas.toDataURL("image/png");
+          } catch (captureErr) {
+            console.warn("[DOCX Export] SVG html2canvas fallback failed:", captureErr);
+          }
+        }
+
+        if (isSvgDataUrl(rasterDataUrl)) {
+          continue;
+        }
+
+        replaceVisualNodeWithImage(node, rasterDataUrl, visual);
+        rasterizedSvgCount++;
+      } catch (err) {
+        console.warn("[DOCX Export] SVG rasterization skipped for one image:", err);
+      }
+    }
+
+    console.debug("[DOCX Export] Rasterized SVG images", { rasterizedSvgCount });
+  }
+
   async function prepareWordExportContainer(editor) {
-    const tempDiv = await prepareRichExportContainer(editor);
+    const tempDiv = await prepareRichExportContainer(editor, {
+      rasterizeSvg: true,
+    });
+
+    await rasterizeSvgImagesForWord(tempDiv, editor);
 
     let preparedWordImages = 0;
 
@@ -680,13 +769,36 @@ function exportPlugin(editor) {
     const extension = getImageExtensionFromDataUrl(dataUrl);
     if (extension !== "svg") return dataUrl;
 
-    const img = await dataUrlToImageElement(dataUrl);
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(width || img.width || 320));
-    canvas.height = Math.max(1, Math.round(height || img.height || 180));
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL("image/png");
+    let objectUrl = "";
+
+    try {
+      let imageSource = dataUrl;
+
+      // Object URLs are more reliable for SVG rasterization in Chromium than
+      // large percent-encoded SVG data URLs.
+      try {
+        const svgBlob = await fetch(dataUrl).then((res) => res.blob());
+        objectUrl = URL.createObjectURL(svgBlob);
+        imageSource = objectUrl;
+      } catch (blobErr) {
+        imageSource = dataUrl;
+      }
+
+      const img = await dataUrlToImageElement(imageSource);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.ceil(width || img.naturalWidth || img.width || 320));
+      canvas.height = Math.max(1, Math.ceil(height || img.naturalHeight || img.height || 180));
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/png");
+    } catch (err) {
+      console.warn("[Export] Failed to rasterize SVG image:", err);
+      return dataUrl;
+    } finally {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
   }
 
   function getUrlFileName(url) {
